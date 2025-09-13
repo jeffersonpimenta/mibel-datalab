@@ -4,7 +4,7 @@
 import io
 import zipfile
 import requests
-import mysql.connector
+import clickhouse_connect
 from datetime import datetime, timedelta, date
 import csv
 import calendar
@@ -29,51 +29,49 @@ for year in range(2023, 2026):
 
 CURVA_PBC_FILES = zip_files + one_files
 
-# ----------------- MySQL -----------------
-MYSQL_HOST = "localhost"
-MYSQL_DB = "mibel"
-MYSQL_USER = "root"
-MYSQL_PASSWORD = "root"
+# ----------------- ClickHouse -----------------
+client = clickhouse_connect.get_client(
+    host='localhost',
+    username='default',
+    password='',
+    database='default'
+)
+
+TABLE_NAME = "ofertas"
 
 # ----------------- FUNÇÕES -----------------
-def get_mysql_conn():
-    return mysql.connector.connect(
-        host=MYSQL_HOST,
-        database=MYSQL_DB,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD
+def create_table_if_not_exists():
+    ddl = f"""
+    CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+        periodo UInt8,
+        data Date,
+        pais String,
+        tipo_oferta String,
+        volume Float64,
+        preco Float64,
+        status String,
+        tipologia String,
+        arquivo String
     )
+    ENGINE = MergeTree()
+    ORDER BY (data, periodo)
+    """
+    client.command(ddl)
+    print("[ClickHouse] Tabela verificada/criada com sucesso.")
 
 def insert_records(records):
     if not records:
         print("[INFO] Nenhum registo para inserir.")
         return
-    conn = get_mysql_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS curvas_mercado (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            periodo INT NOT NULL,
-            data DATE NOT NULL,
-            pais VARCHAR(2) NOT NULL,
-            tipo_oferta VARCHAR(1) NOT NULL,
-            volume DOUBLE NOT NULL,
-            preco DOUBLE NOT NULL,
-            status VARCHAR(1),
-            tipologia VARCHAR(20),
-            arquivo VARCHAR(255)
-        )
-    """)
-    sql = """
-        INSERT INTO curvas_mercado
-        (periodo, data, pais, tipo_oferta, volume, preco, status, tipologia, arquivo)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """
-    cur.executemany(sql, records)
-    conn.commit()
-    cur.close()
-    conn.close()
-    print(f"[MySQL] Inseridos {len(records)} registos do ficheiro {records[0][-1]}.")
+    client.insert(
+        table=TABLE_NAME,
+        data=records,
+        column_names=[
+            "periodo", "data", "pais", "tipo_oferta", "volume",
+            "preco", "status", "tipologia", "arquivo"
+        ]
+    )
+    print(f"[ClickHouse] Inseridos {len(records)} registos do ficheiro {records[0][-1]}.")
 
 def parse_file(raw, filename):
     text = raw.decode("latin-1", errors="ignore")
@@ -82,7 +80,6 @@ def parse_file(raw, filename):
     records = []
 
     for row in reader:
-        # ignora headers, linhas vazias e linhas muito curtas
         if not row or len(row) < 8 or row[0].startswith("OMIE") or row[0].startswith("Periodo"):
             continue
         try:
@@ -90,27 +87,19 @@ def parse_file(raw, filename):
             data = datetime.strptime(row[1], "%d/%m/%Y").date()
             pais = row[2].strip()
             tipo_oferta = row[4].strip() if row[4].strip() in ['C', 'V'] else 'C'
-
             volume = float(row[5].replace(".", "").replace(",", "."))
             preco = float(row[6].replace(".", "").replace(",", "."))
-
             status = row[7].strip() if len(row) > 7 else ''
             tipologia = row[8].strip() if len(row) > 8 else ''
-
-            # se ainda sobrar coluna extra por conta de ";" no final
             if not tipologia and len(row) > 9:
                 tipologia = row[9].strip()
 
             records.append((periodo, data, pais, tipo_oferta, volume, preco, status, tipologia, filename))
         except Exception:
-            # ignora linha ruim sem poluir a tela
             continue
 
     print(f"[PARSE] {len(records)} registos extraídos de {filename}")
     return records
-
-
-
 
 def download_and_process_file(filename):
     url = f"{OMIE_BASE}?filename={filename}&parents=curva_pbc"
@@ -136,13 +125,13 @@ def download_and_process_file(filename):
                 except Exception as e:
                     print(f"[ERRO] {name} dentro do ZIP {filename}: {e}")
     else:
-        # arquivo .1
         records = parse_file(r.content, filename)
         insert_records(records)
 
 # ----------------- MAIN -----------------
 def main():
     print("=== Iniciando processamento das curvas do OMIE 2018-2025 ===")
+    create_table_if_not_exists()
     for f in CURVA_PBC_FILES:
         download_and_process_file(f)
     print("=== Processamento concluído ===")

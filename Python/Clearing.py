@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import clickhouse_connect
 
-# 🔌 Conexão ClickHouse
+# Conexão ClickHouse
 client = clickhouse_connect.get_client(
     host='localhost',
     username='default',
@@ -10,7 +10,7 @@ client = clickhouse_connect.get_client(
     database='default'
 )
 
-# 📥 Parâmetros
+# Parâmetros
 dia = '2025-09-01'
 periodo = 12  # hora do mercado (1 a 24)
 
@@ -36,7 +36,7 @@ vendas  = vendas.sort_values(by='preco', ascending=True)
 compras['vol_acum'] = compras['volume'].cumsum()
 vendas['vol_acum']  = vendas['volume'].cumsum()
 
-# 🔎 Calcular clearing price e volume comercializado
+# Calcular clearing price e volume comercializado
 clearing_price = None
 clearing_volume = None
 
@@ -47,9 +47,9 @@ for i, row in vendas.iterrows():
         clearing_volume = demanda_max
         break
 
-print(f"💡 Clearing Price: {clearing_price} € , Volume Comercializado: {clearing_volume:.2f} MWh")
+print(f" Clearing Price: {clearing_price} € , Volume Comercializado: {clearing_volume:.2f} MWh")
 
-# 📊 Plotar curvas
+# Plotar curvas
 plt.figure(figsize=(10,6))
 
 # Curva de demanda
