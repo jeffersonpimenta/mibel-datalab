@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  php-apache:
+    image: php:8.2-apache
+    container_name: php-apache
+    ports:
+      - "8088:80"
+    volumes:
+      - ./src:/var/www/html   # espelha seus arquivos locais
+    networks:
+      - clickhouse_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # útil se precisar falar com o host
+
+networks:
+  clickhouse_default:
+    external: true

@@ -1,0 +1,6 @@
+<yandex>
+    <http_server>
+        <enable_http_cors>1</enable_http_cors>
+        <http_access_control_allow_origin>*</http_access_control_allow_origin>
+    </http_server>
+</yandex>

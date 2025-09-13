@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    restart: always
+    ports:
+      - "8123:8123" # HTTP (necessário pro Tabix)
+      - "9000:9000" # TCP (para cliente nativo)
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./config.xml:/etc/clickhouse-server/config.d/config.xml
+      - ./users.xml:/etc/clickhouse-server/users.d/users.xml
+      - /c/Users/jmelo/Downloads:/csv
+
+  tabix:
+    image: spoonest/clickhouse-tabix-web-client:latest
+    container_name: clickhouse-tabix
+    restart: always
+    ports:
+      - "8080:80"
+    environment:
+      CH_NAME: default
+      CH_HOST: http://host.docker.internal:8123 # Windows/Mac
+      CH_LOGIN: default
+      CH_PASSWORD: ""
+    depends_on:
+      - clickhouse
+
+volumes:
+  clickhouse_data:
