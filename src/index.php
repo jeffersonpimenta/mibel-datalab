@@ -71,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['query'])) {
 
     <form id="queryForm" method="post">
         <label for="query">Consulta SQL:</label>
-        <textarea id="query" name="query" rows="4" cols="50"></textarea><br>
+        <textarea id="query" name="query" rows="4" cols="50"><?php echo htmlspecialchars($_POST['query'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea><br>
         <input type="submit" value="Executar Consulta">
     </form>
     <div id="result"><?php echo $output; ?></div>
