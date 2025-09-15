@@ -1,160 +1,182 @@
 <?php
-// Frequency Distribution of Bid Prices with Filters
-// -------------------------------------------------
-// This page allows the user to filter offers by country (pais), date, and period
-// and visualises a histogram of bid prices.
-//
-// Parameters are passed via GET: pais, data, periodo
-// Example: frequency_distribution.php?pais=MI&data=2024-01-15&periodo=12
+// Frequency Distribution of bid values from ClickHouse
+// Author: Senior Developer
+// ------------------------------------------------------------
+$host      = 'clickhouse'; // ClickHouse running locally on port 8123
+$port      = 8123;
+$user      = 'default';
+$password  = '';
 
-$host = 'clickhouse';
-$port = 8123;
-$user = 'default';
-$password = '';
+// ------------------------------------------------------------------
+// Helper to safely escape single quotes for SQL values
+function esc($v){return str_replace("'","''",$v);} 
 
-// Read filter values from GET with defaults
-$pais    = isset($_GET['pais']) ? $_GET['pais'] : '';
-$data    = isset($_GET['data']) ? $_GET['data'] : '';
-$periodo = isset($_GET['periodo']) ? (int)$_GET['periodo'] : 0; // 0 means no filter
-$offerType = isset($_GET['offer_type']) ? $_GET['offer_type'] : ''; // C or V, empty for all
+// ------------------------------------------------------------------
+// Read and validate filters from GET parameters
+$filters = [];
 
-// Build the base query for bid offers
-$sql = "SELECT round(preco,2) AS price_bin, COUNT(*) AS freq\n";
-$sql .= "FROM default.ofertas\n";
-$sql .= "WHERE status='C'"; // only active offers
-if ($offerType !== '') {
-    $sql .= " AND tipo_oferta = '" . addslashes($offerType) . "'";
+// Country filter – default empty (no filter). Allowed: MI, PT, ES
+if(isset($_GET['pais']) && in_array($_GET['pais'], ['MI','PT','ES'])){
+    $filters['pais'] = $_GET['pais'];
 }
 
-
-// Apply optional filters
-if ($pais !== '') {
-    $sql .= " AND pais = '" . addslashes($pais) . "'";
-}
-if ($data !== '') {
-    $sql .= " AND data = '" . addslashes($data) . "'";
-}
-if ($periodo > 0 && $periodo <= 24) {
-    $sql .= " AND periodo = {$periodo}";
-}
-
-$sql .= "\nGROUP BY round(preco,2)\nORDER BY price_bin ASC\nFORMAT JSONCompact";
-
-// Execute query via HTTP
-$url = "http://{$host}:{$port}/?user={$user}&password={$password}&query=" . urlencode($sql);
-$response = @file_get_contents($url);
-$chartData = [];
-if ($response !== false) {
-    $dataArr = json_decode($response, true);
-    if (is_array($dataArr) && isset($dataArr['data'])) {
-        foreach ($dataArr['data'] as $row) {
-            // Ensure keys exist
-            if (isset($row['price_bin']) && isset($row['freq'])) {
-                $chartData[] = [
-                    'label' => number_format((float)$row['price_bin'], 2),
-                    'value' => (int)$row['freq']
-                ];
-            }
-        }
+// Periodo – integer 1-25
+if(isset($_GET['periodo']) && ctype_digit($_GET['periodo'])){
+    $p = (int)$_GET['periodo'];
+    if($p>=1 && $p<=25){
+        $filters['periodo'] = $p;
     }
 }
+
+// Tipo de oferta – C or V
+if(isset($_GET['tipo_oferta']) && in_array($_GET['tipo_oferta'], ['C','V'])){
+    $filters['tipo_oferta'] = $_GET['tipo_oferta'];
+}
+
+// Status – C or O
+if(isset($_GET['status']) && in_array($_GET['status'], ['C','O'])){
+    $filters['status'] = $_GET['status'];
+}
+
+// Data (optional). Validate format YYYY-MM-DD. Default to today.
+$dia = '2025-07-01'; // default example date
+if(isset($_GET['data']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['data'])){
+    $dia = $_GET['data'];
+}
+
+// ------------------------------------------------------------------
+// Build ClickHouse query
+$query  = "SELECT width_bucket(preco, -10000, 10000, 500) AS price_bin, COUNT(*) AS freq FROM ofertas WHERE status IN ('C','O')";
+
+if(isset($filters['pais'])){
+    $query .= " AND pais='" . esc($filters['pais']) . "'";
+}
+if(isset($filters['periodo'])){
+    $query .= " AND periodo = {$filters['periodo']}";
+}
+if(isset($filters['tipo_oferta'])){
+    $query .= " AND tipo_oferta='" . esc($filters['tipo_oferta']) . "'";
+}
+if(isset($filters['status'])){
+    // override the IN clause if a single status is chosen
+    $query = str_replace("status IN ('C','O')", "status='" . esc($filters['status']) . "'", $query);
+}
+// date filter
+$query .= " AND data='" . esc($dia) . "'";
+
+$query .= " GROUP BY price_bin ORDER BY price_bin ASC;";
+
+// ------------------------------------------------------------------
+// Execute query against ClickHouse via HTTP interface
+$url = "http://$host:$port/?user=$user&password=$password&default_format=JSON&query=" . urlencode($query);
+$response = @file_get_contents($url);
+
+if ($response === false) {
+    $error = error_get_last();
+    http_response_code(500);
+    echo "<h1>Erro ao conectar no ClickHouse</h1>";
+    if(isset($error['message'])){
+        echo '<pre>' . htmlspecialchars($error['message']) . '</pre>';
+    }
+    exit;
+}
+
+$result = json_decode($response, true);
+if ($result === null || !isset($result['data'])) {
+    http_response_code(500);
+    echo '<h1>Formato inesperado da resposta do ClickHouse</h1>';
+    exit;
+}
+
+$dataRows = $result['data'];
+// Prepare chart data arrays
+$labels = [];
+$scores = [];
+foreach($dataRows as $row){
+    $labels[] = (int)$row['price_bin'];
+    $scores[] = (int)$row['freq'];
+}
+
 ?>
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt">
 <head>
-    <meta charset="UTF-8">
-    <title>Distribuição de Frequência do Preço Bid</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<meta charset="UTF-8">
+<title>Distribuição de Bid – <?= htmlspecialchars($dia) ?></title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
-    <h1>Distribuição de Frequência do Preço Bid</h1>
-    <nav>
-        <a href="clearing.php">Curva de Clearing</a> |
-        <a href="index.php">Consulta Geral</a> |
-        <a href="frequency_distribution.php">Distribuição Bid</a>
-    </nav>
+<h1>Distribuição de Bid (Preço vs Frequência)</h1>
+<form method="get" style="margin-bottom:20px;">
+    <label for="pais">País:</label>
+    <select id="pais" name="pais">
+        <option value="">Todos</option>
+        <?php foreach(['MI','PT','ES'] as $c): ?>
+            <option value="<?= $c ?>" <?= isset($filters['pais']) && $filters['pais']==$c ? 'selected':'' ?>><?= $c ?></option>
+        <?php endforeach; ?>
+    </select>
 
-    <form method="get" id="filterForm">
-        <label for="pais">País:</label>
-        <select name="pais" id="pais">
-            <option value=""<?php echo $pais==='' ? ' selected' : ''; ?>>Todos</option>
-            <?php
-            // Populate country options from distinct query
-            $countries = [];
-            $sqlCountries = "SELECT DISTINCT pais FROM default.ofertas FORMAT JSONCompact";
-            $urlCountries = "http://{$host}:{$port}/?user={$user}&password={$password}&query=" . urlencode($sqlCountries);
-            $resC = @file_get_contents($urlCountries);
-            if ($resC !== false) {
-                $arrC = json_decode($resC, true);
-                if (is_array($arrC) && isset($arrC['data'])) {
-                    foreach ($arrC['data'] as $rowC) {
-                        if (isset($rowC['pais'])) {
-                            $countries[] = $rowC['pais'];
-                        }
-                    }
-                }
-            }
-            sort($countries);
-            foreach ($countries as $c) {
-                echo '<option value="' . htmlspecialchars($c) . '"' . ($pais===$c?' selected':'') . '>' . htmlspecialchars($c) . '</option>';
-            }
-            ?>
-        </select>
+    <label for="periodo">Período:</label>
+    <input type="number" id="periodo" name="periodo" min="1" max="25" value="<?= isset($filters['periodo']) ? $filters['periodo'] : '' ?>">
 
-        <label for="offer_type">Tipo de Oferta:</label>
-        <select name="offer_type" id="offer_type">
-            <option value=""<?php echo $offerType==='' ? ' selected' : ''; ?>>Todos</option>
-            <option value="C" <?php echo $offerType==='C' ? ' selected' : ''; ?>>Compra (C)</option>
-            <option value="V" <?php echo $offerType==='V' ? ' selected' : ''; ?>>Venda (V)</option>
-        </select>
+    <label for="tipo_oferta">Tipo de Oferta:</label>
+    <select id="tipo_oferta" name="tipo_oferta">
+        <option value="">Todos</option>
+        <?php foreach(['C','V'] as $t): ?>
+            <option value="<?= $t ?>" <?= isset($filters['tipo_oferta']) && $filters['tipo_oferta']==$t ? 'selected':'' ?>><?= $t ?></option>
+        <?php endforeach; ?>
+    </select>
 
-        <label for="data">Data:</label>
-        <input type="date" id="data" name="data" value="<?php echo htmlspecialchars($data); ?>">
+    <label for="status">Status:</label>
+    <select id="status" name="status">
+        <option value="">Todos</option>
+        <?php foreach(['C','O'] as $s): ?>
+            <option value="<?= $s ?>" <?= isset($filters['status']) && $filters['status']==$s ? 'selected':'' ?>><?= $s ?></option>
+        <?php endforeach; ?>
+    </select>
 
-        <label for="periodo">Período (1-24):</label>
-        <select id="periodo" name="periodo">
-            <option value="0"<?php echo $periodo===0?' selected':''; ?>>Todos</option>
-            <?php for ($i=1;$i<=24;$i++) {
-                echo '<option value="'.$i.'"'.($periodo===$i?' selected':'').'>'.$i.'</option>';
-            } ?>
-        </select>
+    <label for="data">Data:</label>
+    <input type="date" id="data" name="data" value="<?= htmlspecialchars($dia) ?>">
 
-        <input type="submit" value="Filtrar">
-    </form>
+    <button type="submit">Filtrar</button>
+</form>
 
-    <?php if (!empty($chartData)) : ?>
-        <canvas id="frequencyChart"></canvas>
-        <script>
-            const ctx = document.getElementById('frequencyChart').getContext('2d');
-            const labels = <?php echo json_encode(array_column($chartData, 'label')); ?>;
-            const dataValues = <?php echo json_encode(array_column($chartData, 'value')); ?>;
+<canvas id="freqChart"></canvas>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const ctx = document.getElementById('freqChart').getContext('2d');
+new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: <?= json_encode($labels) ?>,
+        datasets: [{
+            label: 'Frequência',
+            data: <?= json_encode($scores) ?>,
+            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+            borderColor: 'rgb(54, 162, 235)',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive:true,
+        scales:{
+            x:{title:{display:true,labelString:'Bin de Preço'}},
+            y:{beginAtZero:true,title:{display:true,labelString:'Frequência'}}
+        }
+    }
+});
+</script>
 
-            new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Frequência',
-                        data: dataValues,
-                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    scales: {
-                        x: { title: { display: true, text: 'Preço (R$)' } },
-                        y: { beginAtZero: true, title: { display: true, text: 'Frequência' } }
-                    }
-                }
-            });
-        </script>
-    <?php else : ?>
-        <p>Não há dados para os filtros selecionados.</p>
-    <?php endif; ?>
-
+<h2>Tabela de Frequências</h2>
+<table id="freqTable" border="1">
+<thead><tr><th>Bin</th><th>Frequência</th></tr></thead>
+<tbody>
+<?php foreach($dataRows as $row): ?>
+<tr><td><?= htmlspecialchars((int)$row['price_bin']) ?></td><td><?= htmlspecialchars((int)$row['freq']) ?></td></tr>
+<?php endforeach; ?>
+</tbody>
+</table>
 </div>
 </body>
 </html>
