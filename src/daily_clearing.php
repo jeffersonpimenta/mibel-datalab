@@ -131,8 +131,8 @@ foreach ($rows as $row) {
 // Prepare datasets for chart (one line per country across periods)
 $colorMap = [
     'MI' => ['compras'=>'#1f77b4', 'vendas'=>'#ff7f0e'],
-    'PT' => ['compras'=> '#2ca02c', 'vendas'=> '#d62728'],
-    'ES' => ['compras'=> '#9467bd', 'vendas'=> '#8c564b']
+    'PT' => ['compras'=> '#d62728', 'vendas'=> '#ff7f0e'],
+    'ES' => ['compras'=> '#8c564b', 'vendas'=> '#2ca02c']
 ];
 $chartDatasets = [];
 foreach ($colorMap as $pais => $colors) {
@@ -141,6 +141,9 @@ foreach ($colorMap as $pais => $colors) {
     for ($p=1; $p<=24; $p++) {
         if (isset($clearingResults[$p][$pais]) && $clearingResults[$p][$pais] !== null) {
             $clearingPoints[] = ['x'=>$p, 'y'=>round($clearingResults[$p][$pais],2)];
+        } else {
+            // Null value to create gap in line
+            $clearingPoints[] = ['x'=>$p, 'y'=>null];
         }
     }
     if (!empty($clearingPoints)) {
