@@ -1,3 +1,37 @@
+<?php
+$output = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['query'])) {
+    $query = $_POST['query'];
+    // Connection details (same as clearing.php)
+    $host = 'clickhouse';
+    $port = 8123;
+    $user = 'default';
+    $password = '';
+    $url = "http://$host:$port/?user=$user&password=$password&default_format=JSON&query=" . urlencode($query);
+    $response = @file_get_contents($url);
+    if ($response === false) {
+        $output = '<p>Erro ao conectar ao ClickHouse.</p>';
+    } else {
+        $result = json_decode($response, true);
+        if (!isset($result['data'])) {
+            $output = '<p>Formato inesperado da resposta do ClickHouse.</p>';
+        } else {
+            $rows = $result['data'];
+            $cols = array_keys(reset($rows));
+            $table = '<table border="1"><thead><tr>';
+            foreach ($cols as $c) { $table .= "<th>$c</th>"; }
+            $table .= '</tr></thead><tbody>';
+            foreach ($rows as $row) {
+                $table .= '<tr>';
+                foreach ($cols as $c) { $table .= "<td>{$row[$c]}</td>"; }
+                $table .= '</tr>';
+            }
+            $table .= '</tbody></table>';
+            $output = '<h2>Resultado:</h2>' . $table;
+        }
+    }
+}
+?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -34,39 +68,18 @@
 		<button type=\"button\" onclick=\"setAndSubmit('SELECT toYYYYMM(data) AS year_month, COUNT(*) AS cnt FROM default.ofertas GROUP BY year_month ORDER BY year_month DESC LIMIT 12')\">Ofertas mensais</button>
     </div>
 
-    <form id="queryForm">
+    <form id="queryForm" method="post">
         <label for="query">Consulta SQL:</label>
         <textarea id="query" name="query" rows="4" cols="50"></textarea><br>
         <input type="submit" value="Executar Consulta">
     </form>
-    <div id="result"></div>
+    <div id="result"><?php echo $output; ?></div>
 
     <script>
         function setAndSubmit(q){
             document.getElementById('query').value=q;
-            document.getElementById('queryForm').dispatchEvent(new Event('submit'));
+            document.forms[0].submit();
         }
-
-        document.getElementById('queryForm').addEventListener('submit', function(event) {
-            event.preventDefault();
-            var query = document.getElementById('query').value;
-            var xhr = new XMLHttpRequest();
-            xhr.open('POST', 'process_query.php', true);
-            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-            xhr.onreadystatechange = function () {
-                if (xhr.readyState === 4 && xhr.status === 200) {
-                    var response = JSON.parse(xhr.responseText);
-                    var resultDiv = document.getElementById('result');
-                    resultDiv.innerHTML = '';
-                    if (response.error) {
-                        resultDiv.innerHTML = '<p>' + response.error + '</p>';
-                    } else {
-                        resultDiv.innerHTML = '<h2>Resposta do ClickHouse:</h2><pre>' + response.result + '</pre>';
-                    }
-                }
-            };
-            xhr.send('query=' + encodeURIComponent(query));
-        });
     </script>
 </div>
 </body>
