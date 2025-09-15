@@ -46,6 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['query'])) {
         <a href="clearing.php">Curva de Clearing</a> |
         <a href="index.php">Consulta Geral</a> |
         <a href="frequency_distribution.php">Distribuição Bid</a>
+		<a href="daily_clearing.php">Clearing price diário</a>
     </nav>
 
     <div id="presetQueries">
