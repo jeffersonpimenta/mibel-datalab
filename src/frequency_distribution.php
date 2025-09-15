@@ -46,7 +46,13 @@ if(isset($_GET['data']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['data'])){
 
 // ------------------------------------------------------------------
 // Build ClickHouse query
-$query  = "SELECT width_bucket(preco, -10000, 10000, 500) AS price_bin, COUNT(*) AS freq FROM ofertas WHERE status IN ('C','O')";
+// Default bucket parameters – can be overridden via GET
+$bucket_min  = isset($_GET['bucket_min']) && is_numeric($_GET['bucket_min']) ? (float)$_GET['bucket_min'] : -10000;
+$bucket_max  = isset($_GET['bucket_max']) && is_numeric($_GET['bucket_max']) ? (float)$_GET['bucket_max'] : 10000;
+$bucket_bins = isset($_GET['bucket_bins']) && ctype_digit($_GET['bucket_bins']) && (int)$_GET['bucket_bins']>0
+                ? (int)$_GET['bucket_bins']
+                : 500;
+$query  = "SELECT width_bucket(preco, $bucket_min, $bucket_max, $bucket_bins) AS price_bin, COUNT(*) AS freq FROM ofertas WHERE status IN ('C','O')";
 
 if(isset($filters['pais'])){
     $query .= " AND pais='" . esc($filters['pais']) . "'";
@@ -139,10 +145,12 @@ foreach($dataRows as $row){
     <label for="data">Data:</label>
     <input type="date" id="data" name="data" value="<?= htmlspecialchars($dia) ?>">
 
-    <button type="submit">Filtrar</button>
+    <label for="bucket_bins">Nº de Bins:</label>
+<input type="number" id="bucket_bins" name="bucket_bins" min="1" value="<?= isset($_GET['bucket_bins']) ? (int)$_GET['bucket_bins'] : '' ?>">
+<button type="submit">Filtrar</button>
 </form>
 
-<canvas id="freqChart"></canvas>
+<div style="width:100%; height:600px;"> <canvas id="freqChart" style="height:100%; width:100%;"></canvas></div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 const ctx = document.getElementById('freqChart').getContext('2d');
@@ -167,8 +175,28 @@ new Chart(ctx, {
     }
 });
 </script>
+<script>
+window.addEventListener('DOMContentLoaded', function(){
+    var toggleBtn = document.getElementById('toggleTableBtn');
+    var tbl = document.getElementById('freqTable');
+    if(!tbl) return;
+    // Initially hide table
+    tbl.style.display = 'none';
+    toggleBtn.textContent = 'Mostrar Tabela';
+    toggleBtn.addEventListener('click', function(){
+        var computedDisplay = window.getComputedStyle(tbl).display;
+        if (computedDisplay === 'none' || tbl.style.display === 'none') {
+            tbl.style.display = '';
+            this.textContent = 'Ocultar Tabela';
+        } else {
+            tbl.style.display = 'none';
+            this.textContent = 'Mostrar Tabela';
+        }
+    });
+});
+</script>
 
-<h2>Tabela de Frequências</h2>
+<h2>Tabela de Frequências <button id="toggleTableBtn" style="margin-left:1rem;">Mostrar Tabela</button></h2>
 <table id="freqTable" border="1">
 <thead><tr><th>Bin</th><th>Frequência</th></tr></thead>
 <tbody>
