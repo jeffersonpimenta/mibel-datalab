@@ -136,55 +136,20 @@ $colorMap = [
 ];
 $chartDatasets = [];
 foreach ($colorMap as $pais => $colors) {
-    if ($pais === 'MI') {
-        // MI dataset with null gaps for PT/ES presence
-        $points = [];
-        for ($p=1; $p<=24; $p++) {
-            $price = isset($clearingResults[$p][$pais]) ? round($clearingResults[$p][$pais],2) : null;
-            $points[] = ['x'=>$p, 'y'=>$price];
+    // Clearing dataset only
+    $clearingPoints = [];
+    for ($p=1; $p<=24; $p++) {
+        if (isset($clearingResults[$p][$pais]) && $clearingResults[$p][$pais] !== null) {
+            $clearingPoints[] = ['x'=>$p, 'y'=>round($clearingResults[$p][$pais],2)];
+        } else {
+            // Null value to create gap in line
+            $clearingPoints[] = ['x'=>$p, 'y'=>null];
         }
-    } else {
-        // Build base points where country has clearing price
-        $points = [];
-        for ($p=1; $p<=24; $p++) {
-            if (isset($clearingResults[$p][$pais]) && $clearingResults[$p][$pais] !== null) {
-                $points[] = ['x'=>$p, 'y'=>round($clearingResults[$p][$pais],2)];
-            }
-        }
-
-        // Identify split periods where MI missing but this country present
-        for ($s=1; $s<=24; $s++) {
-            if (!isset($clearingResults[$s]['MI']) && isset($clearingResults[$s][$pais])) {
-                // Duplicate previous MI point
-                if ($s-1 >= 1 && isset($clearingResults[$s-1]['MI'])) {
-                    $dupX = $s-1;
-                    // Check if already present
-                    $exists = false;
-                    foreach ($points as $pt) { if ($pt['x']===$dupX){$exists=true;break;} }
-                    if (!$exists) {
-                        $points[] = ['x'=>$dupX, 'y'=>round($clearingResults[$s-1]['MI'],2)];
-                    }
-                }
-                // Duplicate next MI point
-                if ($s+1 <= 24 && isset($clearingResults[$s+1]['MI'])) {
-                    $dupX = $s+1;
-                    $exists = false;
-                    foreach ($points as $pt) { if ($pt['x']===$dupX){$exists=true;break;} }
-                    if (!$exists) {
-                        $points[] = ['x'=>$dupX, 'y'=>round($clearingResults[$s+1]['MI'],2)];
-                    }
-                }
-            }
-        }
-
-        // Sort points by x to maintain order
-        usort($points, function ($a,$b){ return $a['x'] <=> $b['x']; });
     }
-
-    if (!empty($points)) {
+    if (!empty($clearingPoints)) {
         $chartDatasets[] = [
             'label' => "Clearing ($pais)",
-            'data'  => $points,
+            'data'  => $clearingPoints,
             'borderColor' => $colorMap[$pais]['compras'],
             'backgroundColor'=> hexToRgba($colorMap[$pais]['compras'], 0.1),
             'pointRadius'=>3,
