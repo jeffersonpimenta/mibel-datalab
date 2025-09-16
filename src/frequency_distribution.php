@@ -108,6 +108,44 @@ foreach($dataRows as $row){
     $scores[] = (int)$row['freq'];
 }
 
+// ------------------------------------------------------------------
+// Raw data query – same filters but no aggregation
+$rawQuery = "SELECT * FROM ofertas WHERE status IN ('C','O')";
+if(isset($filters['pais'])){
+    $rawQuery .= " AND pais='" . esc($filters['pais']) . "'";
+}
+if(isset($filters['periodo'])){
+    $rawQuery .= " AND periodo = {$filters['periodo']}";
+}
+if(isset($filters['tipo_oferta'])){
+    $rawQuery .= " AND tipo_oferta='" . esc($filters['tipo_oferta']) . "'";
+}
+if(isset($filters['status'])){
+    // override the IN clause if a single status is chosen
+    $rawQuery = str_replace("status IN ('C','O')", "status='" . esc($filters['status']) . "'", $rawQuery);
+}
+$rawQuery .= " AND data='" . esc($dia) . "' ORDER BY preco ASC;";
+
+// Execute raw query
+$urlRaw = "http://$host:$port/?user=$user&password=$password&default_format=JSON&query=" . urlencode($rawQuery);
+$responseRaw = @file_get_contents($urlRaw);
+if ($responseRaw === false) {
+    $error = error_get_last();
+    http_response_code(500);
+    echo "<h1>Erro ao consultar ClickHouse (dados brutos)</h1>";
+    if(isset($error['message'])){
+        echo '<pre>' . htmlspecialchars($error['message']) . '</pre>';
+    }
+    exit;
+}
+$rawResult = json_decode($responseRaw, true);
+if ($rawResult === null || !isset($rawResult['data'])) {
+    http_response_code(500);
+    echo '<h1>Formato inesperado da resposta do ClickHouse (dados brutos)</h1>';
+    exit;
+}
+$rawRows = $rawResult['data'];
+
 ?>
 <!DOCTYPE html>
 <html lang="pt">
@@ -210,6 +248,40 @@ window.addEventListener('DOMContentLoaded', function(){
 <?php endforeach; ?>
 </tbody>
 </table>
+
+<?php if (!empty($rawRows)): ?>
+<h2>Dados Brutos <button id="toggleRawBtn" style="margin-left:1rem;">Mostrar Tabela</button></h2>
+<table id="rawTable" border="1">
+<thead><tr><?php foreach($rawRows[0] as $col => $val): ?><th><?= htmlspecialchars($col) ?></th><?php endforeach; ?></tr></thead>
+<tbody>
+<?php foreach($rawRows as $row): ?>
+<tr><?php foreach($row as $cell): ?><td><?= htmlspecialchars($cell) ?></td><?php endforeach; ?></tr>
+<?php endforeach; ?>
+</tbody>
+</table>
+
+<script>
+window.addEventListener('DOMContentLoaded', function(){
+    var toggleRawBtn = document.getElementById('toggleRawBtn');
+    var tblRaw = document.getElementById('rawTable');
+    if(!tblRaw) return;
+    // Initially hide table
+    tblRaw.style.display = 'none';
+    toggleRawBtn.textContent = 'Mostrar Tabela';
+    toggleRawBtn.addEventListener('click', function(){
+        var computedDisplay = window.getComputedStyle(tblRaw).display;
+        if (computedDisplay === 'none' || tblRaw.style.display === 'none') {
+            tblRaw.style.display = '';
+            this.textContent = 'Ocultar Tabela';
+        } else {
+            tblRaw.style.display = 'none';
+            this.textContent = 'Mostrar Tabela';
+        }
+    });
+});
+</script>
+<?php endif; ?>
+
 </div>
 </body>
 </html>
