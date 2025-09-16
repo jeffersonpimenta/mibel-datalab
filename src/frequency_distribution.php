@@ -96,10 +96,15 @@ if ($result === null || !isset($result['data'])) {
 
 $dataRows = $result['data'];
 // Prepare chart data arrays
+// Compute bin width
+$step = ($bucket_max - $bucket_min) / $bucket_bins;
 $labels = [];
 $scores = [];
 foreach($dataRows as $row){
-    $labels[] = (int)$row['price_bin'];
+    // Calculate middle value of the bin for X‑axis label
+    $binIndex = (int)$row['price_bin'];
+    $labelVal = $bucket_min + ($binIndex - 1) * $step + $step / 2;
+    $labels[] = round($labelVal, 2); // two decimals
     $scores[] = (int)$row['freq'];
 }
 
@@ -169,8 +174,8 @@ new Chart(ctx, {
     options: {
         responsive:true,
         scales:{
-            x:{title:{display:true,labelString:'Bin de Preço'}},
-            y:{beginAtZero:true,title:{display:true,labelString:'Frequência'}}
+            x:{type:'linear', position:'bottom', title:{display:true, labelString:'Preço (€)'}},
+            y:{beginAtZero:true, title:{display:true, labelString:'Frequência'}}
         }
     }
 });
