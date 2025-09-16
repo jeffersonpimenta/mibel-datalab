@@ -150,8 +150,8 @@ foreach ($colorMap as $pais => $colors) {
         $chartDatasets[] = [
             'label' => "Clearing ($pais)",
             'data'  => $clearingPoints,
-            'borderColor' => '#000000',
-            'backgroundColor'=> hexToRgba('#000000', 0.1),
+            'borderColor' => $colorMap[$pais]['compras'],
+            'backgroundColor'=> hexToRgba($colorMap[$pais]['compras'], 0.1),
             'pointRadius'=>3,
             'tension'=>0.2
         ];
