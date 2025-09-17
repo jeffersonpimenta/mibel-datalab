@@ -195,6 +195,7 @@ if ($fixed_pre !== null) {
     $modified = processClearing($rowsModified ?? []);
     $modifiedResults = $modified['results'];
     $modifiedChart   = $modified['datasets'];
+    $modifiedOffersByPais = $modified['offers_by_pais'] ?? [];
 }
 ?>
 <!DOCTYPE html>
@@ -269,7 +270,7 @@ foreach ($allCountries as $pais) {
 <button id="toggleBtn" class="btn-toggle">Mostrar Tabela</button>
 <table id="offersTable" border="1" cellpadding="5">
     <thead>
-        <tr><th colspan="3">Compras (Demanda)</th><th colspan="3">Vendas (Oferta)</th></tr>
+        <tr><th>País</th><th colspan="3">Compras (Demanda)</th><th colspan="3">Vendas (Oferta)</th></tr>
         <tr><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th></tr>
     </thead>
     <tbody>
@@ -303,6 +304,47 @@ document.getElementById('toggleBtn').addEventListener('click', function(){
 });
 document.getElementById('offersTable').style.display = 'none';
 </script>
+<!-- Tabela das ofertas modificadas -->
+<?php if ($fixed_pre !== null): ?>
+<h2>Detalhes das Ofertas (Modificado)</h2>
+<button id="toggleBtnMod" class="btn-toggle">Mostrar Tabela</button>
+<table id="offersTableMod" border="1" cellpadding="5">
+    <thead>
+        <tr><th>País</th><th colspan="3">Compras (Demanda)</th><th colspan="3">Vendas (Oferta)</th></tr>
+        <tr><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th></tr>
+    </thead>
+    <tbody>
+<?php
+$firstPaisMod = array_key_first($modifiedOffersByPais ?? []);
+$comprasMod   = $modifiedOffersByPais[$firstPaisMod]['compras'] ?? [];
+$vendasMod    = $modifiedOffersByPais[$firstPaisMod]['vendas'] ?? [];
+$maxRowsMod   = max(count($comprasMod), count($vendasMod));
+for ($i=0;$i<$maxRowsMod;$i++) {
+    $c = $comprasMod[$i] ?? null;
+    $v = $vendasMod[$i] ?? null;
+    echo '<tr>';
+    if ($c) { echo '<td>'.number_format($c['preco'],2).'</td><td>'.number_format($c['volume'],2).'</td><td>'.(isset($c['vol_acum'])?number_format($c['vol_acum'],2):number_format($c['volume'],2)).'</td>'; } else { echo '<td colspan="3">&nbsp;</td>'; }
+    if ($v) { echo '<td>'.number_format($v['preco'],2).'</td><td>'.number_format($v['volume'],2).'</td><td>'.(isset($v['vol_acum'])?number_format($v['vol_acum'],2):number_format($v['volume'],2)).'</td>'; } else { echo '<td colspan="3">&nbsp;</td>'; }
+    echo '</tr>';
+}
+?>
+    </tbody>
+</table>
+<script>
+document.getElementById('toggleBtnMod').addEventListener('click', function(){
+    var tbl = document.getElementById('offersTableMod');
+    var computedDisplay = window.getComputedStyle(tbl).display;
+    if (computedDisplay === 'none' || tbl.style.display === 'none') {
+        tbl.style.display = '';
+        this.textContent = 'Esconder Tabela';
+    } else {
+        tbl.style.display = 'none';
+        this.textContent = 'Mostrar Tabela';
+    }
+});
+document.getElementById('offersTableMod').style.display = 'none';
+</script>
+<?php endif; ?>
 </div>
 </body>
 </html>
