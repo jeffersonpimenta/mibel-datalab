@@ -271,23 +271,32 @@ foreach ($allCountries as $pais) {
 <table id="offersTable" border="1" cellpadding="5">
     <thead>
         <tr><th>País</th><th colspan="3">Compras (Demanda)</th><th colspan="3">Vendas (Oferta)</th></tr>
-        <tr><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th></tr>
+        <tr><th></th><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th></tr>
     </thead>
     <tbody>
 <?php
-$firstPais = array_key_first($original['offers_by_pais'] ?? []);
-$compras   = $original['offers_by_pais'][$firstPais]['compras'] ?? [];
-$vendas    = $original['offers_by_pais'][$firstPais]['vendas'] ?? [];
-$maxRows   = max(count($compras), count($vendas));
-for ($i=0;$i<$maxRows;$i++) {
-    $c = $compras[$i] ?? null;
-    $v = $vendas[$i] ?? null;
-    echo '<tr>';
-    if ($c) { echo '<td>'.number_format($c['preco'],2).'</td><td>'.number_format($c['volume'],2).'</td><td>'.(isset($c['vol_acum'])?number_format($c['vol_acum'],2):number_format($c['volume'],2)).'</td>'; } else { echo '<td colspan="3">&nbsp;</td>'; }
-    if ($v) { echo '<td>'.number_format($v['preco'],2).'</td><td>'.number_format($v['volume'],2).'</td><td>'.(isset($v['vol_acum'])?number_format($v['vol_acum'],2):number_format($v['volume'],2)).'</td>'; } else { echo '<td colspan="3">&nbsp;</td>'; }
-    echo '</tr>';
-}
-?>
+foreach ($original['offers_by_pais'] as $pais => $group) {
+    $compras = $group['compras'] ?? [];
+    $vendas  = $group['vendas'] ?? [];
+    $maxRows = max(count($compras), count($vendas));
+    for ($i=0;$i<$maxRows;$i++) {
+        $c = $compras[$i] ?? null;
+        $v = $vendas[$i] ?? null;
+        echo '<tr>';
+        echo '<td>'.htmlspecialchars($pais).'</td>';
+        if ($c) {
+            echo '<td>'.number_format($c['preco'],2).'</td><td>'.number_format($c['volume'],2).'</td><td>'.(isset($c['vol_acum'])?number_format($c['vol_acum'],2):number_format($c['volume'],2)).'</td>';
+        } else {
+            echo '<td colspan=\"3\">&nbsp;</td>';
+        }
+        if ($v) {
+            echo '<td>'.number_format($v['preco'],2).'</td><td>'.number_format($v['volume'],2).'</td><td>'.(isset($v['vol_acum'])?number_format($v['vol_acum'],2):number_format($v['volume'],2)).'</td>';
+        } else {
+            echo '<td colspan=\"3\">&nbsp;</td>';
+        }
+        echo '</tr>';
+    }
+}?>
     </tbody>
 </table>
 <script>
@@ -311,23 +320,32 @@ document.getElementById('offersTable').style.display = 'none';
 <table id="offersTableMod" border="1" cellpadding="5">
     <thead>
         <tr><th>País</th><th colspan="3">Compras (Demanda)</th><th colspan="3">Vendas (Oferta)</th></tr>
-        <tr><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th></tr>
+        <tr><th></th><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th><th>Preço (€)</th><th>Volume</th><th>Cum. Volume</th></tr>
     </thead>
     <tbody>
 <?php
-$firstPaisMod = array_key_first($modifiedOffersByPais ?? []);
-$comprasMod   = $modifiedOffersByPais[$firstPaisMod]['compras'] ?? [];
-$vendasMod    = $modifiedOffersByPais[$firstPaisMod]['vendas'] ?? [];
-$maxRowsMod   = max(count($comprasMod), count($vendasMod));
-for ($i=0;$i<$maxRowsMod;$i++) {
-    $c = $comprasMod[$i] ?? null;
-    $v = $vendasMod[$i] ?? null;
-    echo '<tr>';
-    if ($c) { echo '<td>'.number_format($c['preco'],2).'</td><td>'.number_format($c['volume'],2).'</td><td>'.(isset($c['vol_acum'])?number_format($c['vol_acum'],2):number_format($c['volume'],2)).'</td>'; } else { echo '<td colspan="3">&nbsp;</td>'; }
-    if ($v) { echo '<td>'.number_format($v['preco'],2).'</td><td>'.number_format($v['volume'],2).'</td><td>'.(isset($v['vol_acum'])?number_format($v['vol_acum'],2):number_format($v['volume'],2)).'</td>'; } else { echo '<td colspan="3">&nbsp;</td>'; }
-    echo '</tr>';
-}
-?>
+foreach ($modifiedOffersByPais as $pais => $group) {
+    $compras = $group['compras'] ?? [];
+    $vendas  = $group['vendas'] ?? [];
+    $maxRows = max(count($compras), count($vendas));
+    for ($i=0;$i<$maxRows;$i++) {
+        $c = $compras[$i] ?? null;
+        $v = $vendas[$i] ?? null;
+        echo '<tr>';
+        echo '<td>'.htmlspecialchars($pais).'</td>';
+        if ($c) {
+            echo '<td>'.number_format($c['preco'],2).'</td><td>'.number_format($c['volume'],2).'</td><td>'.(isset($c['vol_acum'])?number_format($c['vol_acum'],2):number_format($c['volume'],2)).'</td>';
+        } else {
+            echo '<td colspan=\"3\">&nbsp;</td>';
+        }
+        if ($v) {
+            echo '<td>'.number_format($v['preco'],2).'</td><td>'.number_format($v['volume'],2).'</td><td>'.(isset($v['vol_acum'])?number_format($v['vol_acum'],2):number_format($v['volume'],2)).'</td>';
+        } else {
+            echo '<td colspan=\"3\">&nbsp;</td>';
+        }
+        echo '</tr>';
+    }
+}?>
     </tbody>
 </table>
 <script>
