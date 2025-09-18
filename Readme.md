@@ -143,7 +143,15 @@ LIMIT 1;
 
 3. Corre o(s) script(s) de scraping / preparação (em `Python/`) para raspar os dados do site do OMIE.  
 
+	```bash
+	docker-compose up
+	```
+
 4. Usa a interface web para análises.
+
+	```http
+	http://localhost:8088/
+	```
 
 ---
 

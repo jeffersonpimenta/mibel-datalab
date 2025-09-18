@@ -1,18 +1,50 @@
-version: "3.9"
+version: '3.8'
 
 services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    restart: always
+    ports:
+      - "8123:8123" # HTTP (necessário pro Tabix)
+      - "9000:9000" # TCP (para cliente nativo)
+    volumes:
+      - clickhouse_clickhouse_data:/var/lib/clickhouse
+      - ./Clickhouse/config.xml:/etc/clickhouse-server/config.d/config.xml
+      - ./Clickhouse/users.xml:/etc/clickhouse-server/users.d/users.xml
+      - /c/Users/jmelo/Downloads:/csv
+    networks:
+      - clickhouse_default
+
+  # tabix:
+  #   image: spoonest/clickhouse-tabix-web-client:latest
+  #   container_name: clickhouse-tabix
+  #   restart: always
+  #   ports:
+  #     - "8080:80"
+  #   environment:
+  #     CH_NAME: default
+  #     CH_HOST: http://host.docker.internal:8123
+  #     CH_LOGIN: default
+  #     CH_PASSWORD: ""
+  #   depends_on:
+  #     - clickhouse
+
   php-apache:
     image: php:8.2-apache
     container_name: php-apache
     ports:
       - "8088:80"
     volumes:
-      - ./src:/var/www/html   # espelha seus arquivos locais
+      - ./src:/var/www/html   # espelha arquivos locais
     networks:
       - clickhouse_default
     extra_hosts:
-      - "host.docker.internal:host-gateway" # útil se precisar falar com o host
+      - "host.docker.internal:host-gateway"
 
+volumes:
+  clickhouse_clickhouse_data:
+    external: true
 networks:
   clickhouse_default:
-    external: true
+    driver: bridge

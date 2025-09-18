@@ -10,23 +10,38 @@ services:
       - "9000:9000" # TCP (para cliente nativo)
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./config.xml:/etc/clickhouse-server/config.d/config.xml
-      - ./users.xml:/etc/clickhouse-server/users.d/users.xml
+      - ./Clickhouse/config.xml:/etc/clickhouse-server/config.d/config.xml
+      - ./Clickhouse/users.xml:/etc/clickhouse-server/users.d/users.xml
       - /c/Users/jmelo/Downloads:/csv
 
-  tabix:
-    image: spoonest/clickhouse-tabix-web-client:latest
-    container_name: clickhouse-tabix
-    restart: always
+  # tabix:
+    # image: spoonest/clickhouse-tabix-web-client:latest
+    # container_name: clickhouse-tabix
+    # restart: always
+    # ports:
+      # - "8080:80"
+    # environment:
+      # CH_NAME: default
+      # CH_HOST: http://host.docker.internal:8123 # Windows/Mac
+      # CH_LOGIN: default
+      # CH_PASSWORD: ""
+    # depends_on:
+      # - clickhouse
+
+    php-apache:
+    image: php:8.2-apache
+    container_name: php-apache
     ports:
-      - "8080:80"
-    environment:
-      CH_NAME: default
-      CH_HOST: http://host.docker.internal:8123 # Windows/Mac
-      CH_LOGIN: default
-      CH_PASSWORD: ""
-    depends_on:
-      - clickhouse
+      - "8088:80"
+    volumes:
+      - ./src:/var/www/html   # espelha arquivos locais
+    networks:
+      - clickhouse_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # útil se precisar falar com o host
+
 
 volumes:
   clickhouse_data:
+  
+  
