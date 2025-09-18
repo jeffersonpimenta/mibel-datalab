@@ -1,6 +1,6 @@
 <?php
-// Copied from src/clearing_fixed.php and modified to handle normal distribution for zero-price offers.
-// This script calculates clearing price, allows a user-provided normal distribution (mean & stddev) for bids with zero price,
+// Copied from src/clearing_fixed.php and modified to handle uniform distribution for zero-price offers.
+// This script calculates clearing price, allows a user-provided uniform distribution (min & max) for bids with zero price,
 // and displays both the original and modified clearing results on a chart.
 
 $host      = 'clickhouse';
@@ -13,10 +13,10 @@ $dia       = isset($_GET['dia']) && preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $_GET
 $periodo   = isset($_GET['periodo']) && ctype_digit($_GET['periodo']) &&
              (int)$_GET['periodo'] >= 1 && (int)$_GET['periodo'] <= 24
             ? (int)$_GET['periodo'] : 12;
-$normal_mean = isset($_GET['mean']) && is_numeric($_GET['mean'])
-                ? floatval($_GET['mean']) : null;
-$normal_std  = isset($_GET['stddev']) && is_numeric($_GET['stddev'])
-                ? floatval($_GET['stddev']) : null;
+$uniform_min = isset($_GET['min']) && is_numeric($_GET['min'])
+                ? floatval($_GET['min']) : null;
+$uniform_max = isset($_GET['max']) && is_numeric($_GET['max'])
+                ? floatval($_GET['max']) : null;
 
 // Query to fetch country, offer type, volume and price
 $query = "SELECT pais, tipo_oferta, volume, preco\n          FROM ofertas\n          WHERE data = '$dia' AND periodo = $periodo AND status IN ('C', 'O')";
@@ -41,22 +41,12 @@ if (!isset($result['data'])) {
 $rowsOriginal = $result['data'];
 // For modified data we will clone and adjust prices.
 $rowsModified = [];
-if ($normal_mean !== null && $normal_std !== null) {
-    // Helper to generate normal random value
-    function randNormal($mu, $sigma){
-        static $use_last=false,$y1=0.0; 
-        if($use_last){$use_last=false;$val=$y1*$sigma+$mu;} else {
-            do{ $u1 = mt_rand() / mt_getrandmax(); $u2 = mt_rand() / mt_getrandmax(); }
-            while ($u1 <= 1e-10);
-            $z0 = sqrt(-2.0 * log($u1)) * cos(2*M_PI*$u2);
-            $z1 = sqrt(-2.0 * log($u1)) * sin(2*M_PI*$u2);
-            $val=$z0*$sigma+$mu; $y1=$z1; $use_last=true;
-        }
-        return $val;
-    }
+if ($uniform_min !== null && $uniform_max !== null) {
     foreach ($rowsOriginal as $row) {
         if (isset($row['preco']) && ((float)$row['preco'] === 0.0)) {
-            $row['preco'] = randNormal($normal_mean, $normal_std); // replace zero price with random normal
+            // generate uniform random value between min and max
+            $rand = mt_rand() / mt_getrandmax();
+            $row['preco'] = $uniform_min + $rand * ($uniform_max - $uniform_min);
         }
         $rowsModified[] = $row;
     }
@@ -203,8 +193,8 @@ $original = processClearing($rowsOriginal);
 $originalResults = $original['results'];
 $originalChart   = $original['datasets'];
 
-// If normal distribution supplied, run modified calculation
-if ($normal_mean !== null && $normal_std !== null) {
+// If uniform distribution supplied, run modified calculation
+if ($uniform_min !== null && $uniform_max !== null) {
     $modified = processClearing($rowsModified ?? []);
     $modifiedResults = $modified['results'];
     $modifiedChart   = $modified['datasets'];
@@ -220,12 +210,12 @@ if ($normal_mean !== null && $normal_std !== null) {
 </head>
 <body>
 <div class="container">
-<h1>Resultado do Clearing (Distribuição normal)</h1>
+<h1>Resultado do Clearing (Distribuição uniforme)</h1>
 <nav>
 	<a href="index.php">Consulta Geral</a> |
 	<a href="clearing.php">Curva de Clearing</a> |
 	<a href="clearing_fixed.php">Curva de Clearing com PRE fixado</a> |
-	<a href="clearing_normal.php">Curva de Clearing com Distribuição Normal</a> |
+	<a href="clearing_uniform.php">Curva de Clearing com Distribuição Uniforme</a> |
 	<a href="frequency_distribution.php">Distribuição Bid</a> |
 	<a href="daily_clearing.php">Clearing price diário</a> |
 </nav>
@@ -234,10 +224,10 @@ if ($normal_mean !== null && $normal_std !== null) {
     <input type="date" id="dia" name="dia" value="<?= htmlspecialchars($dia) ?>" required>
     <label for="periodo">Período (1-24):</label>
     <input type="number" id="periodo" name="periodo" min="1" max="24" value="<?= $periodo ?>" required>
-    <label for="mean">Média (µ):</label>
-    <input type="number" step="0.01" id="mean" name="mean" value="<?= htmlspecialchars($normal_mean ?? '') ?>">
-    <label for="stddev">Desvio Padrão (σ):</label>
-    <input type="number" step="0.01" id="stddev" name="stddev" value="<?= htmlspecialchars($normal_std ?? '') ?>">
+    <label for="min">Mínimo:</label>
+    <input type="number" step="0.01" id="min" name="min" value="<?= htmlspecialchars($uniform_min ?? '') ?>">
+    <label for="max">Máximo:</label>
+    <input type="number" step="0.01" id="max" name="max" value="<?= htmlspecialchars($uniform_max ?? '') ?>">
     <button type="submit">Consultar</button>
 </form></div>
 <div class="clearing-info">
@@ -250,7 +240,7 @@ if ($normal_mean !== null && $normal_std !== null) {
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 const chartDatasets = <?= json_encode($originalChart) ?>;
-<?php if ($normal_mean !== null && $normal_std !== null && !empty($modifiedChart)): ?>
+<?php if ($uniform_min !== null && $uniform_max !== null && !empty($modifiedChart)): ?>
     // Add modified series with dashed lines
     <?php foreach ($modifiedChart as &$ds): $ds['borderDash']=[5,5]; $ds['label'].=' (Modificado)'; endforeach; ?>
     <?= 'const modifiedDatasets = '.json_encode($modifiedChart).';' ?>
@@ -269,8 +259,8 @@ new Chart(ctx, {
     }
 });
 </script>
-<?php if ($normal_mean !== null && $normal_std !== null): ?>
-<h2>Comparação de Clearing (Distribuição Normal = µ <?= htmlspecialchars(number_format($normal_mean, 2)) ?>, σ <?= htmlspecialchars(number_format($normal_std, 2)) ?>)</h2>
+<?php if ($uniform_min !== null && $uniform_max !== null): ?>
+<h2>Comparação de Clearing (Distribuição Uniforme = [<?= htmlspecialchars(number_format($uniform_min, 2)) ?>; <?= htmlspecialchars(number_format($uniform_max, 2)) ?>])</h2>
 <table border="1" cellpadding="5">
 <tr><th>País</th><th>Clearing Original (€)</th><th>Clearing Modificado (€)</th><th>Volume Original (MWh)</th><th>Volume Modificado (MWh)</th></tr>
 <?php
@@ -337,7 +327,7 @@ document.getElementById('toggleBtn').addEventListener('click', function(){
 document.getElementById('offersTable').style.display = 'none';
 </script>
 <!-- Tabela das ofertas modificadas -->
-<?php if ($normal_mean !== null && $normal_std !== null): ?>
+<?php if ($uniform_min !== null && $uniform_max !== null): ?>
 <h2>Detalhes das Ofertas (Modificado)</h2>
 <button id="toggleBtnMod" class="btn-toggle">Mostrar Tabela</button>
 <table id="offersTableMod" border="1" cellpadding="5">
