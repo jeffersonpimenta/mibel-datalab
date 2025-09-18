@@ -157,6 +157,14 @@ $rawRows = $rawResult['data'];
 <body>
 <div class="container">
 <h1>Distribuição de Bid (Preço vs Frequência)</h1>
+<nav>
+	<a href="index.php">Consulta Geral</a> |
+	<a href="clearing.php">Curva de Clearing</a> |
+	<a href="clearing_fixed.php">Curva de Clearing com PRE fixado</a> |
+	<a href="frequency_distribution.php">Distribuição Bid</a> |
+	<a href="daily_clearing.php">Clearing price diário</a> |
+</nav>
+
 <form method="get" style="margin-bottom:20px;">
     <label for="pais">País:</label>
     <select id="pais" name="pais">

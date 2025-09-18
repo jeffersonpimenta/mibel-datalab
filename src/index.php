@@ -43,10 +43,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['query'])) {
     <div class="container">
     <h1>Consulta ao ClickHouse</h1>
     <nav>
+	    <a href="index.php">Consulta Geral</a> |
         <a href="clearing.php">Curva de Clearing</a> |
-        <a href="index.php">Consulta Geral</a> |
-        <a href="frequency_distribution.php">Distribuição Bid</a>
-		<a href="daily_clearing.php">Clearing price diário</a>
+        <a href="clearing_fixed.php">Curva de Clearing com PRE fixado</a> |
+        <a href="frequency_distribution.php">Distribuição Bid</a> |
+		<a href="daily_clearing.php">Clearing price diário</a> |
     </nav>
 
     <div id="presetQueries">
@@ -59,14 +60,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['query'])) {
 		<button type="button" onclick="setAndSubmit('SELECT DISTINCT periodo FROM default.ofertas')">Distinct Periodo</button>
 		<button type="button" onclick="setAndSubmit('SELECT DISTINCT data FROM default.ofertas')">Distinct Data</button>
 		<button type="button" onclick="setAndSubmit('SELECT DISTINCT pais FROM default.ofertas')">Distinct Pais</button>
-		<button type=\"button\" onclick=\"setAndSubmit('SELECT DISTINCT tipo_oferta FROM default.ofertas')\">Distinct Tipo Oferta</button>
-		<button type=\"button\" onclick=\"setAndSubmit('SELECT DISTINCT status FROM default.ofertas')\">Distinct Status</button>
-		<button type=\"button\" onclick=\"setAndSubmit('SELECT DISTINCT tipologia FROM default.ofertas')\">Distinct Tipologia</button>
-		<button type=\"button\" onclick=\"setAndSubmit('SELECT DISTINCT arquivo FROM default.ofertas')\">Distinct Arquivo</button>
-		<button type=\"button\" onclick=\"setAndSubmit('SELECT pais, SUM(volume) AS total_volume FROM default.ofertas GROUP BY pais ORDER BY total_volume DESC')\">Volume total por país</button>
-		<button type=\"button\" onclick=\"setAndSubmit('SELECT pais, MAX(preco) AS max_price FROM default.ofertas WHERE status = \'O\' GROUP BY pais ORDER BY max_price DESC')\">Valor máximo por país</button>
-		<button type=\"button\" onclick=\"setAndSubmit('SELECT tipo_oferta, AVG(volume) AS avg_volume FROM default.ofertas GROUP BY tipo_oferta')\">Volume médio por tipo de oferta</button>
-		<button type=\"button\" onclick=\"setAndSubmit('SELECT toYYYYMM(data) AS year_month, COUNT(*) AS cnt FROM default.ofertas GROUP BY year_month ORDER BY year_month DESC LIMIT 12')\">Ofertas mensais</button>
+		<button type="button" onclick="setAndSubmit('SELECT DISTINCT tipo_oferta FROM default.ofertas')">Distinct Tipo Oferta</button>
+		<button type="button" onclick="setAndSubmit('SELECT DISTINCT status FROM default.ofertas')">Distinct Status</button>
+		<button type="button" onclick="setAndSubmit('SELECT DISTINCT tipologia FROM default.ofertas')">Distinct Tipologia</button>
+		<button type="button" onclick="setAndSubmit('SELECT DISTINCT arquivo FROM default.ofertas')">Distinct Arquivo</button>
+		<button type="button" onclick="setAndSubmit('SELECT pais, SUM(volume) AS total_volume FROM default.ofertas GROUP BY pais ORDER BY total_volume DESC')">Volume total por país</button>
+		<button type="button" onclick="setAndSubmit('SELECT pais, MAX(preco) AS max_price FROM default.ofertas WHERE status = \'O\' GROUP BY pais ORDER BY max_price DESC')">Valor máximo por país</button>
+		<button type="button" onclick="setAndSubmit('SELECT tipo_oferta, AVG(volume) AS avg_volume FROM default.ofertas GROUP BY tipo_oferta')">Volume médio por tipo de oferta</button>
+		<button type="button" onclick="setAndSubmit('SELECT toYYYYMM(data) AS year_month, COUNT(*) AS cnt FROM default.ofertas GROUP BY year_month ORDER BY year_month DESC LIMIT 12')">Ofertas mensais</button>
     </div>
 
     <form id="queryForm" method="post">

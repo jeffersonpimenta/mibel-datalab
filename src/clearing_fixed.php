@@ -208,6 +208,13 @@ if ($fixed_pre !== null) {
 <body>
 <div class="container">
 <h1>Resultado do Clearing (Original)</h1>
+<nav>
+	<a href="index.php">Consulta Geral</a> |
+	<a href="clearing.php">Curva de Clearing</a> |
+	<a href="clearing_fixed.php">Curva de Clearing com PRE fixado</a> |
+	<a href="frequency_distribution.php">Distribuição Bid</a> |
+	<a href="daily_clearing.php">Clearing price diário</a> |
+</nav>
 <div class="selection-row"><form method="get" style="margin-bottom:1rem;">
     <label for="dia">Data:</label>
     <input type="date" id="dia" name="dia" value="<?= htmlspecialchars($dia) ?>" required>
