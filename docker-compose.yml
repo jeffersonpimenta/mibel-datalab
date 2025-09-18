@@ -37,6 +37,7 @@ services:
       - "8088:80"
     volumes:
       - ./src:/var/www/html   # espelha arquivos locais
+      - ./php.ini:/usr/local/etc/php/conf.d/custom.ini # aumenta a memória do PHP
     networks:
       - clickhouse_default
     extra_hosts:
