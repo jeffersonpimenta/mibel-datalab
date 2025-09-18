@@ -41,6 +41,7 @@ if (!isset($result['data'])) {
 $rowsOriginal = $result['data'];
 // For modified data we will clone and adjust prices.
 $rowsModified = [];
+$replacedPrices = [];
 if ($normal_mean !== null && $normal_std !== null) {
     // Helper to generate normal random value
     function randNormal($mu, $sigma){
@@ -57,6 +58,7 @@ if ($normal_mean !== null && $normal_std !== null) {
     foreach ($rowsOriginal as $row) {
         if (isset($row['preco']) && ((float)$row['preco'] === 0.0)) {
             $row['preco'] = randNormal($normal_mean, $normal_std); // replace zero price with random normal
+            $replacedPrices[] = $row['preco'];
         }
         $rowsModified[] = $row;
     }
@@ -209,6 +211,33 @@ if ($normal_mean !== null && $normal_std !== null) {
     $modifiedResults = $modified['results'];
     $modifiedChart   = $modified['datasets'];
     $modifiedOffersByPais = $modified['offers_by_pais'] ?? [];
+
+// Frequency distribution of replaced bids
+// -----------------  CONFIGURAÇÃO -----------------
+$bucketSize = 20;   // tamanho do bucket em € (pode ser 1, 2.5, 10, etc.)
+$minPrice   = floor(min($replacedPrices));   // preço mínimo real na lista
+$maxPrice   = ceil(max($replacedPrices));    // preço máximo real
+
+// -----------------  AGRUPAMENTO -----------------
+$frequency = ['labels'=>[], 'data'=>[]];
+for ($b=$minPrice; $b <= $maxPrice; $b += $bucketSize) {
+    $lower = $b;
+    $upper = $b + $bucketSize;
+
+    // conta quantos preços caem nesse intervalo
+    $count = 0;
+    foreach ($replacedPrices as $price) {
+        if ($price >= $lower && $price < $upper) {   // último bucket pode usar <=
+            $count++;
+        }
+    }
+
+    if ($count > 0) {
+        $label = sprintf('%.2f–%.2f €', $lower, $upper);
+        $frequency['labels'][] = $label;
+        $frequency['data'][]   = $count;
+    }
+}
 }
 ?>
 <!DOCTYPE html>
@@ -247,6 +276,9 @@ if ($normal_mean !== null && $normal_std !== null) {
 <?php endforeach; ?>
 </div>
 <canvas id="clearingChart" width="800" height="400"></canvas>
+<!-- Distribuição de Bids Substituídas -->
+<h2>Distribuição de Bids Substituídas</h2>
+<canvas id="frequencyChart" width="800" height="300"></canvas>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 const chartDatasets = <?= json_encode($originalChart) ?>;
@@ -268,6 +300,14 @@ new Chart(ctx, {
         }
     }
 });
+
+// Frequency distribution of replaced bids
+const freqLabels = <?= json_encode($frequency['labels'] ?? []) ?>;
+const freqData = <?= json_encode($frequency['data'] ?? []) ?>;
+if(freqLabels.length>0){
+  const freqCtx=document.getElementById('frequencyChart').getContext('2d');
+  new Chart(freqCtx,{type:'bar', data:{labels:freqLabels, datasets:[{label:'Bids Replaced',data:freqData,borderColor:'rgba(75,192,192,1)',backgroundColor:'rgba(75,192,192,0.4)'}]}, options:{scales:{x:{title:{display:true,text:'Price (€)'}},y:{title:{display:true,text:'Count'}}}}});
+}
 </script>
 <?php if ($normal_mean !== null && $normal_std !== null): ?>
 <h2>Comparação de Clearing (Distribuição Normal = µ <?= htmlspecialchars(number_format($normal_mean, 2)) ?>, σ <?= htmlspecialchars(number_format($normal_std, 2)) ?>)</h2>
