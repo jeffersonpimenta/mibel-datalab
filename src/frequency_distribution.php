@@ -178,7 +178,7 @@ $displayDate = ($startDia === $endDia) ? $startDia : "$startDia a $endDia";
 ?>
 <title>Distribuição de Bid – <?= htmlspecialchars($displayDate) ?></title>
 <link rel="stylesheet" href="style.css">
-<style>.btn{padding:.5rem 1rem;background:#007bff;color:white;border:none;cursor:pointer;margin: .5rem 0;} .btn:hover{background:#0056b3;}</style>
+
 </head>
 <body>
 <div class="container">
@@ -194,7 +194,7 @@ $displayDate = ($startDia === $endDia) ? $startDia : "$startDia a $endDia";
 	<a href="daily_clearing.php">Clearing price diário</a> |
 </nav>
 
-<form method="get" style="margin-bottom:20px;">
+<form method="get">
     <label for="pais">País:</label>
     <select id="pais" name="pais">
         <option value="">Todos</option>
@@ -232,7 +232,7 @@ $displayDate = ($startDia === $endDia) ? $startDia : "$startDia a $endDia";
 <button type="submit">Filtrar</button>
 </form>
 
-<div style="width:100%; height:600px;"> <canvas id="freqChart" style="height:100%; width:100%;"></canvas></div>
+<div class="chart-container"><canvas id="freqChart"></canvas></div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
@@ -280,7 +280,7 @@ window.addEventListener('DOMContentLoaded', function(){
 });
 </script>
 
-<h2>Tabela de Frequências <button id="toggleTableBtn" style="margin-left:1rem;">Mostrar Tabela</button></h2>
+<h2>Tabela de Frequências <button id="toggleTableBtn">Mostrar Tabela</button></h2>
 <table id="freqTable" border="1">
 <thead><tr><th>Bin</th><th>Frequência</th></tr></thead>
 <tbody>
