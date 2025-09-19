@@ -39,9 +39,13 @@ if(isset($_GET['status']) && in_array($_GET['status'], ['C','O'])){
 }
 
 // Data (optional). Validate format YYYY-MM-DD. Default to today.
-$dia = '2025-07-01'; // default example date
-if(isset($_GET['data']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['data'])){
-    $dia = $_GET['data'];
+$startDia = isset($_GET['data_inicio']) && preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $_GET['data_inicio']) ? $_GET['data_inicio'] : date('Y-m-d');
+$endDia   = isset($_GET['data_fim'])     && preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $_GET['data_fim'])     ? $_GET['data_fim']     : $startDia;
+// Determine date filter string
+if ($startDia === $endDia) {
+    $dateFilter = "AND data='" . esc($startDia) . "'";
+} else {
+    $dateFilter = "AND data BETWEEN '" . esc($startDia) . "' AND '" . esc($endDia) . "'";
 }
 
 // ------------------------------------------------------------------
@@ -68,7 +72,7 @@ if(isset($filters['status'])){
     $query = str_replace("status IN ('C','O')", "status='" . esc($filters['status']) . "'", $query);
 }
 // date filter
-$query .= " AND data='" . esc($dia) . "'";
+$query .= $dateFilter;
 
 $query .= " GROUP BY price_bin ORDER BY price_bin ASC;";
 
@@ -124,7 +128,7 @@ if(isset($filters['status'])){
     // override the IN clause if a single status is chosen
     $rawQuery = str_replace("status IN ('C','O')", "status='" . esc($filters['status']) . "'", $rawQuery);
 }
-$rawQuery .= " AND data='" . esc($dia) . "' ORDER BY preco ASC;";
+$rawQuery .= $dateFilter . ' ORDER BY preco ASC;';
 
 // Execute raw query
 $urlRaw = "http://$host:$port/?user=$user&password=$password&default_format=JSON&query=" . urlencode($rawQuery);
@@ -151,7 +155,10 @@ $rawRows = $rawResult['data'];
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
-<title>Distribuição de Bid – <?= htmlspecialchars($dia) ?></title>
+<?php
+$displayDate = ($startDia === $endDia) ? $startDia : "$startDia a $endDia";
+?>
+<title>Distribuição de Bid – <?= htmlspecialchars($displayDate) ?></title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -196,8 +203,10 @@ $rawRows = $rawResult['data'];
         <?php endforeach; ?>
     </select>
 
-    <label for="data">Data:</label>
-    <input type="date" id="data" name="data" value="<?= htmlspecialchars($dia) ?>">
+    <label for="data_inicio">Data Inicial:</label>
+    <input type="date" id="data_inicio" name="data_inicio" value="<?= htmlspecialchars($startDia) ?>">
+    <label for="data_fim">Data Final:</label>
+    <input type="date" id="data_fim" name="data_fim" value="<?= htmlspecialchars($endDia) ?>">
 
     <label for="bucket_bins">Nº de Bins:</label>
 <input type="number" id="bucket_bins" name="bucket_bins" min="1" value="<?= isset($_GET['bucket_bins']) ? (int)$_GET['bucket_bins'] : '' ?>">
