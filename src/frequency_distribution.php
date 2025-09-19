@@ -234,7 +234,6 @@ $displayDate = ($startDia === $endDia) ? $startDia : "$startDia a $endDia";
 
 <div style="width:100%; height:600px;"> <canvas id="freqChart" style="height:100%; width:100%;"></canvas></div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<p><a href="?<?= http_build_query(array_merge($_GET, ['download_raw'=>1])) ?>" class="btn">Download CSV</a></p>
 
 <script>
 const ctx = document.getElementById('freqChart').getContext('2d');
@@ -260,7 +259,6 @@ new Chart(ctx, {
 });
 </script>
 <p><a href="?<?= http_build_query(array_merge($_GET, ['download_raw'=>1])) ?>" class="btn">Download CSV</a></p>
-
 <script>
 window.addEventListener('DOMContentLoaded', function(){
     var toggleBtn = document.getElementById('toggleTableBtn');
