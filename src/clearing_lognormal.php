@@ -62,6 +62,42 @@ if ($lognormal_mu !== null && $lognormal_sigma !== null) {
 		$rowsModified[] = $row;
 	}
 
+    // -----------------  FREQUENCY DISTRIBUTION OF REPLACED BIDS -----------------
+    // Collect the prices that were replaced (original zero -> new value)
+    $replacedPrices = [];
+    foreach ($rowsOriginal as $idx => $origRow) {
+        $modRow = $rowsModified[$idx] ?? null;
+        if ($modRow && $origRow['preco'] == 0.0 && $modRow['preco'] != 0.0) {
+            $replacedPrices[] = (float)$modRow['preco'];
+        }
+    }
+
+    // Frequency distribution of replaced bids
+    // -----------------  CONFIGURAÇÃO -----------------
+    $bucketSize = 20;   // tamanho do bucket em € (pode ser 1, 2.5, 10, etc.)
+    $minPrice   = floor(min($replacedPrices));   // preço mínimo real na lista
+    $maxPrice   = ceil(max($replacedPrices));    // preço máximo real
+
+    // -----------------  AGRUPAMENTO -----------------
+    $frequency = ['labels'=>[], 'data'=>[]];
+    for ($b=$minPrice; $b <= $maxPrice; $b += $bucketSize) {
+        $lower = $b;
+        $upper = $b + $bucketSize;
+
+        // conta quantos preços caem nesse intervalo
+        $count = 0;
+        foreach ($replacedPrices as $price) {
+            if ($price >= $lower && $price < $upper) {   // último bucket pode usar <=
+                $count++;
+            }
+        }
+
+        if ($count > 0) {
+            $label = sprintf('%.2f–%.2f €', $lower, $upper);
+            $frequency['labels'][] = $label;
+            $frequency['data'][]   = $count;
+        }
+    }
 }
 
 // Helper functions -----------------------------------------------------
@@ -250,7 +286,19 @@ if ($lognormal_mu !== null && $lognormal_sigma !== null) {
 <?php endforeach; ?>
 </div>
 <canvas id="clearingChart" width="800" height="400"></canvas>
+
+<h2>Distribuição de Frequência das Bids Substituídas</h2>
+<canvas id="freqChart" width="800" height="400"></canvas>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const freqLabels = <?= json_encode($frequency['labels']); ?>;
+const freqData = <?= json_encode($frequency['data']); ?>;
+new Chart(document.getElementById('freqChart').getContext('2d'), {
+    type: 'bar',
+    data: { labels: freqLabels, datasets: [{label:'Replaced Bids',data:freqData,backgroundColor:'#3498db'}] },
+    options:{scales:{x:{title:{display:true,text:'Preço (€)'}},y:{title:{display:true,text:'Frequência'},beginAtZero:true}}}
+});
+</script>
 <script>
 const chartDatasets = <?= json_encode($originalChart) ?>;
 <?php if ($lognormal_mu !== null && $lognormal_sigma !== null && !empty($modifiedChart)): ?>
@@ -313,12 +361,12 @@ foreach ($original['offers_by_pais'] as $pais => $group) {
         if ($c) {
             echo '<td>'.number_format($c['preco'],2).'</td><td>'.number_format($c['volume'],2).'</td><td>'.(isset($c['vol_acum'])?number_format($c['vol_acum'],2):number_format($c['volume'],2)).'</td>';
         } else {
-            echo '<td colspan=\"3\">&nbsp;</td>';
+            echo '<td colspan="3">&nbsp;</td>';
         }
         if ($v) {
             echo '<td>'.number_format($v['preco'],2).'</td><td>'.number_format($v['volume'],2).'</td><td>'.(isset($v['vol_acum'])?number_format($v['vol_acum'],2):number_format($v['volume'],2)).'</td>';
         } else {
-            echo '<td colspan=\"3\">&nbsp;</td>';
+            echo '<td colspan="3">&nbsp;</td>';
         }
         echo '</tr>';
     }
@@ -362,12 +410,12 @@ foreach ($modifiedOffersByPais as $pais => $group) {
         if ($c) {
             echo '<td>'.number_format($c['preco'],2).'</td><td>'.number_format($c['volume'],2).'</td><td>'.(isset($c['vol_acum'])?number_format($c['vol_acum'],2):number_format($c['volume'],2)).'</td>';
         } else {
-            echo '<td colspan=\"3\">&nbsp;</td>';
+            echo '<td colspan="3">&nbsp;</td>';
         }
         if ($v) {
             echo '<td>'.number_format($v['preco'],2).'</td><td>'.number_format($v['volume'],2).'</td><td>'.(isset($v['vol_acum'])?number_format($v['vol_acum'],2):number_format($v['volume'],2)).'</td>';
         } else {
-            echo '<td colspan=\"3\">&nbsp;</td>';
+            echo '<td colspan="3">&nbsp;</td>';
         }
         echo '</tr>';
     }
