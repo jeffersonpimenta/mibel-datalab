@@ -31,6 +31,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['query'])) {
         }
     }
 }
+if (isset($_GET['download_csv']) && !empty($_GET['query'])) {
+    $q = $_GET['query'];
+    $host = 'clickhouse';
+    $port = 8123;
+    $user = 'default';
+    $password = '';
+    $url = "http://$host:$port/?user=$user&password=$password&default_format=JSON&query=" . urlencode($q);
+    $response = @file_get_contents($url);
+    if ($response !== false) {
+        $result = json_decode($response, true);
+        if (isset($result['data'])) {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="table.csv"');
+            $out = fopen('php://output', 'w');
+            $rows = $result['data'];
+            if (!empty($rows)) {
+                fputcsv($out, array_keys(reset($rows)));
+                foreach ($rows as $row) {
+                    fputcsv($out, $row);
+                }
+            } else {
+                fputcsv($out, ['Nenhum dado']);
+            }
+            fclose($out);
+            exit;
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -78,6 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['query'])) {
         <input type="submit" value="Executar Consulta">
     </form>
     <div id="result"><?php echo $output; ?></div>
+<p><a href="?download_csv=1&amp;query=<?php echo urlencode($_POST['query'] ?? ''); ?>" class="btn">Download CSV da Tabela</a></p>
 
     <script>
         function setAndSubmit(q){
