@@ -42,12 +42,13 @@ $rowsOriginal = $result['data'];
 $rowsModified = [];
 if ($fixed_pre !== null) {
     foreach ($rowsOriginal as $row) {
-        if (isset($row['preco']) && ((float)$row['preco'] === 0.0)) {
-            $row['preco'] = $fixed_pre; // replace zero price with fixed value
+        if ($row['tipo_oferta'] === 'V' && isset($row['preco']) && (float)$row['preco'] === 0.0) {
+            $row['preco'] = $fixed_pre; // aplica PRE apenas às compras a preço 0
         }
         $rowsModified[] = $row;
     }
 }
+
 
 // Helper functions -----------------------------------------------------
 function hexToRgba(string $hex, float $alpha): string {

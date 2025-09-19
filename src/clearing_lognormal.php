@@ -53,14 +53,15 @@ if ($lognormal_mu !== null && $lognormal_sigma !== null) {
         $use_last = true;
         return ($y1 * $stddev + $mean); // we only need one sample
     }
-    foreach ($rowsOriginal as $row) {
-        if (isset($row['preco']) && ((float)$row['preco'] === 0.0)) {
-            $normalSample = rand_normal($lognormal_mu, $lognormal_sigma);
-            // lognormal value
-            $row['preco'] = exp($normalSample);
-        }
-        $rowsModified[] = $row;
-    }
+	foreach ($rowsOriginal as $row) {
+		// aplica lognormal apenas às COMPRAS a preço zero
+		if ($row['tipo_oferta'] === 'V' && isset($row['preco']) && (float)$row['preco'] === 0.0) {
+			$normalSample = rand_normal($lognormal_mu, $lognormal_sigma);
+			$row['preco'] = exp($normalSample); // valor lognormal
+		}
+		$rowsModified[] = $row;
+	}
+
 }
 
 // Helper functions -----------------------------------------------------

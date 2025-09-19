@@ -56,11 +56,12 @@ if ($normal_mean !== null && $normal_std !== null) {
         return $val;
     }
     foreach ($rowsOriginal as $row) {
-        if (isset($row['preco']) && ((float)$row['preco'] === 0.0)) {
-            $row['preco'] = randNormal($normal_mean, $normal_std); // replace zero price with random normal
-            $replacedPrices[] = $row['preco'];
-        }
-        $rowsModified[] = $row;
+		// aplica normal apenas às COMPRAS a preço zero
+		if ($row['tipo_oferta'] === 'V' && isset($row['preco']) && (float)$row['preco'] === 0.0) {
+			$row['preco'] = randNormal($normal_mean, $normal_std);
+			$replacedPrices[] = $row['preco'];
+		}
+		$rowsModified[] = $row;
     }
 }
 

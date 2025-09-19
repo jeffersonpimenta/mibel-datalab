@@ -43,14 +43,15 @@ $rowsOriginal = $result['data'];
 $rowsModified = [];
 if ($uniform_min !== null && $uniform_max !== null) {
     foreach ($rowsOriginal as $row) {
-        if (isset($row['preco']) && ((float)$row['preco'] === 0.0)) {
-            // generate uniform random value between min and max
-            $rand = mt_rand() / mt_getrandmax();
+        // aplica uniforme apenas às COMPRAS a preço zero
+        if ($row['tipo_oferta'] === 'V' && isset($row['preco']) && (float)$row['preco'] === 0.0) {
+            $rand = mt_rand() / mt_getrandmax(); // valor [0,1)
             $row['preco'] = $uniform_min + $rand * ($uniform_max - $uniform_min);
         }
         $rowsModified[] = $row;
     }
 }
+
 
 // Helper functions -----------------------------------------------------
 function hexToRgba(string $hex, float $alpha): string {
