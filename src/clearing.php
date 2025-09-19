@@ -238,7 +238,7 @@ if ($hasMI) {
 	<a href="clearing.php">Curva de Clearing</a> |
 	<a href="clearing_fixed.php">Curva de Clearing com PRE fixado</a> |
 	<a href="clearing_uniform.php">Curva de Clearing com Distribuição Uniforme</a> |
-	<a href="clearing_lognormal.php">Curva de Clearing com Distribuição LogNormal</a> 
+	<a href="clearing_lognormal.php">Curva de Clearing com Distribuição LogNormal</a> | 
 	<a href="clearing_normal.php">Curva de Clearing com Distribuição Normal</a> |
 	<a href="frequency_distribution.php">Distribuição Bid</a> |
 	<a href="daily_clearing.php">Clearing price diário</a> |
