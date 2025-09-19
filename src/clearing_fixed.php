@@ -208,7 +208,7 @@ if ($fixed_pre !== null) {
 </head>
 <body>
 <div class="container">
-<h1>Resultado do Clearing (Original)</h1>
+<h1>Resultado do Clearing (Distribuição fixada)</h1>
 <nav>
 	<a href="index.php">Consulta Geral</a> |
 	<a href="clearing.php">Curva de Clearing</a> |

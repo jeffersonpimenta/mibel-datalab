@@ -258,7 +258,7 @@ if ($lognormal_mu !== null && $lognormal_sigma !== null) {
 </head>
 <body>
 <div class="container">
-<h1>Resultado do Clearing (Original)</h1>
+<h1>Resultado do Clearing (Distribuição lognormal)</h1>
 <nav>
 	<a href="index.php">Consulta Geral</a> |
 	<a href="clearing.php">Curva de Clearing</a> |
