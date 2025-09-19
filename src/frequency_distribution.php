@@ -14,6 +14,7 @@ function esc($v){return str_replace("'","''",$v);}
 // ------------------------------------------------------------------
 // Read and validate filters from GET parameters
 $filters = [];
+$downloadRaw = isset($_GET['download_raw']);
 
 // Country filter – default empty (no filter). Allowed: MI, PT, ES
 if(isset($_GET['pais']) && in_array($_GET['pais'], ['MI','PT','ES'])){
@@ -43,9 +44,9 @@ $startDia = isset($_GET['data_inicio']) && preg_match('/^\\d{4}-\\d{2}-\\d{2}$/'
 $endDia   = isset($_GET['data_fim'])     && preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $_GET['data_fim'])     ? $_GET['data_fim']     : $startDia;
 // Determine date filter string
 if ($startDia === $endDia) {
-    $dateFilter = "AND data='" . esc($startDia) . "'";
+    $dateFilter = " AND data='" . esc($startDia) . "'";
 } else {
-    $dateFilter = "AND data BETWEEN '" . esc($startDia) . "' AND '" . esc($endDia) . "'";
+    $dateFilter = " AND data BETWEEN '" . esc($startDia) . "' AND '" . esc($endDia) . "'";
 }
 
 // ------------------------------------------------------------------
@@ -150,6 +151,23 @@ if ($rawResult === null || !isset($rawResult['data'])) {
 }
 $rawRows = $rawResult['data'];
 
+if ($downloadRaw) {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="raw_data.csv"');
+
+    $output = fopen('php://output', 'w');
+    if (!empty($rawRows)) {
+        fputcsv($output, array_keys($rawRows[0]));
+        foreach ($rawRows as $row) {
+            fputcsv($output, $row);
+        }
+    } else {
+        fputcsv($output, ['No data']);
+    }
+    fclose($output);
+    exit;
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="pt">
@@ -160,6 +178,7 @@ $displayDate = ($startDia === $endDia) ? $startDia : "$startDia a $endDia";
 ?>
 <title>Distribuição de Bid – <?= htmlspecialchars($displayDate) ?></title>
 <link rel="stylesheet" href="style.css">
+<style>.btn{padding:.5rem 1rem;background:#007bff;color:white;border:none;cursor:pointer;margin: .5rem 0;} .btn:hover{background:#0056b3;}</style>
 </head>
 <body>
 <div class="container">
@@ -215,6 +234,8 @@ $displayDate = ($startDia === $endDia) ? $startDia : "$startDia a $endDia";
 
 <div style="width:100%; height:600px;"> <canvas id="freqChart" style="height:100%; width:100%;"></canvas></div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<p><a href="?<?= http_build_query(array_merge($_GET, ['download_raw'=>1])) ?>" class="btn">Download CSV</a></p>
+
 <script>
 const ctx = document.getElementById('freqChart').getContext('2d');
 new Chart(ctx, {
@@ -238,6 +259,8 @@ new Chart(ctx, {
     }
 });
 </script>
+<p><a href="?<?= http_build_query(array_merge($_GET, ['download_raw'=>1])) ?>" class="btn">Download CSV</a></p>
+
 <script>
 window.addEventListener('DOMContentLoaded', function(){
     var toggleBtn = document.getElementById('toggleTableBtn');
@@ -269,38 +292,7 @@ window.addEventListener('DOMContentLoaded', function(){
 </tbody>
 </table>
 
-<?php if (!empty($rawRows)): ?>
-<h2>Dados Brutos <button id="toggleRawBtn" style="margin-left:1rem;">Mostrar Tabela</button></h2>
-<table id="rawTable" border="1">
-<thead><tr><?php foreach($rawRows[0] as $col => $val): ?><th><?= htmlspecialchars($col) ?></th><?php endforeach; ?></tr></thead>
-<tbody>
-<?php foreach($rawRows as $row): ?>
-<tr><?php foreach($row as $cell): ?><td><?= htmlspecialchars($cell) ?></td><?php endforeach; ?></tr>
-<?php endforeach; ?>
-</tbody>
-</table>
 
-<script>
-window.addEventListener('DOMContentLoaded', function(){
-    var toggleRawBtn = document.getElementById('toggleRawBtn');
-    var tblRaw = document.getElementById('rawTable');
-    if(!tblRaw) return;
-    // Initially hide table
-    tblRaw.style.display = 'none';
-    toggleRawBtn.textContent = 'Mostrar Tabela';
-    toggleRawBtn.addEventListener('click', function(){
-        var computedDisplay = window.getComputedStyle(tblRaw).display;
-        if (computedDisplay === 'none' || tblRaw.style.display === 'none') {
-            tblRaw.style.display = '';
-            this.textContent = 'Ocultar Tabela';
-        } else {
-            tblRaw.style.display = 'none';
-            this.textContent = 'Mostrar Tabela';
-        }
-    });
-});
-</script>
-<?php endif; ?>
 
 </div>
 </body>
