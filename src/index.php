@@ -42,14 +42,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['query'])) {
 <body>
     <div class="container">
     <h1>Consulta ao ClickHouse</h1>
-    <nav>
-	    <a href="index.php">Consulta Geral</a> |
-        <a href="clearing.php">Curva de Clearing</a> |
-        <a href="clearing_fixed.php">Curva de Clearing com PRE fixado</a> |
-        <a href="frequency_distribution.php">Distribuição Bid</a> |
+	<nav>
+		<a href="index.php">Consulta Geral</a> |
+		<a href="clearing.php">Curva de Clearing</a> |
+		<a href="clearing_fixed.php">Curva de Clearing com PRE fixado</a> |
+		<a href="clearing_uniform.php">Curva de Clearing com Distribuição Uniforme</a> |
+		<a href="clearing_lognormal.php">Curva de Clearing com Distribuição LogNormal</a> 
+		<a href="clearing_normal.php">Curva de Clearing com Distribuição Normal</a> |
+		<a href="frequency_distribution.php">Distribuição Bid</a> |
 		<a href="daily_clearing.php">Clearing price diário</a> |
-    </nav>
-
+	</nav>
     <div id="presetQueries">
 	    <button type="button" onclick="setAndSubmit('DESCRIBE TABLE default.ofertas')">Descrever tabela</button>
         <button type="button" onclick="setAndSubmit('SELECT * FROM default.ofertas LIMIT 10')">Primeiras 10 linhas</button>
