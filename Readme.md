@@ -143,6 +143,8 @@ LIMIT 1;
 
 3. Corre o(s) script(s) de scraping / preparação (em `Python/`) para raspar os dados do site do OMIE.  
 
+4. Corre o docker para montar os serviços.
+
 	```bash
 	docker-compose up
 	```
