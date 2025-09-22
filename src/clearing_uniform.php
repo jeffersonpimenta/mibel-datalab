@@ -283,6 +283,7 @@ foreach ($allCountries as $pais) {
 </table>
 <?php endif; ?>
 <h2>Detalhes das Ofertas (Original)</h2>
+<button class="btn-download" onclick="downloadTable('offersTable','offres_original.csv')">Download Tabela</button>
 <button id="toggleBtn" class="btn-toggle">Mostrar Tabela</button>
 <table id="offersTable" border="1" cellpadding="5">
     <thead>
@@ -332,6 +333,7 @@ document.getElementById('offersTable').style.display = 'none';
 <!-- Tabela das ofertas modificadas -->
 <?php if ($uniform_min !== null && $uniform_max !== null): ?>
 <h2>Detalhes das Ofertas (Modificado)</h2>
+<button class="btn-download" onclick="downloadTable('offersTableMod','offres_modificado.csv')">Download Tabela</button>
 <button id="toggleBtnMod" class="btn-toggle">Mostrar Tabela</button>
 <table id="offersTableMod" border="1" cellpadding="5">
     <thead>
@@ -380,5 +382,30 @@ document.getElementById('offersTableMod').style.display = 'none';
 </script>
 <?php endif; ?>
 </div>
+<script>
+function downloadTable(tableId, filename) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    let csvContent = '';
+    const rows = table.querySelectorAll('tr');
+    rows.forEach((row, i) => {
+        const cols = row.querySelectorAll('th, td');
+        const rowData = Array.from(cols).map(col => {
+            const text = col.textContent.trim();
+            return '"' + text.replace(/"/g, '""') + '"';
+        }).join(',');
+        csvContent += rowData;
+        if (i < rows.length - 1) csvContent += '\n';
+    });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+</script>
 </body>
 </html>
