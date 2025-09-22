@@ -29,6 +29,7 @@ canvas{display:block;margin:30px auto 0;max-width:100%;height:auto;}
 
 /* Flex container for selection row */
 .selection-row{display:flex;flex-wrap:wrap;gap:20px;align-items:center;margin-bottom:1rem;}
+.selection-row form{margin-bottom:1rem;}
 .clearing-info{background:#f5fbff;padding:12px;border-radius:4px;font-size:.95rem;}
 
 /* Preset query buttons */

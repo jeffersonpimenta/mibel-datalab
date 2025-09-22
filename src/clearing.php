@@ -243,7 +243,7 @@ if ($hasMI) {
 	<a href="frequency_distribution.php">Distribuição Bid</a> |
 	<a href="daily_clearing.php">Clearing price diário</a> |
 </nav>
-<div class="selection-row"><form method="get" style="margin-bottom:1rem;">
+<div class="selection-row"><form method="get">
     <label for="dia">Data:</label>
     <input type="date" id="dia" name="dia" value="<?= htmlspecialchars($dia) ?>" required>
     <label for="periodo">Período (1-24):</label>
