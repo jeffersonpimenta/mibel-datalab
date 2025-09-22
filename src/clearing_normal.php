@@ -334,6 +334,7 @@ foreach ($allCountries as $pais) {
 <?php endif; ?>
 <h2>Detalhes das Ofertas (Original)</h2>
 <button id="toggleBtn" class="btn-toggle">Mostrar Tabela</button>
+<button class="btn-download" onclick="downloadTable('offersTable')">Download Tabela</button>
 <table id="offersTable" border="1" cellpadding="5">
     <thead>
         <tr><th>País</th><th colspan="3">Compras (Demanda)</th><th colspan="3">Vendas (Oferta)</th></tr>
@@ -383,6 +384,7 @@ document.getElementById('offersTable').style.display = 'none';
 <?php if ($normal_mean !== null && $normal_std !== null): ?>
 <h2>Detalhes das Ofertas (Modificado)</h2>
 <button id="toggleBtnMod" class="btn-toggle">Mostrar Tabela</button>
+<button class="btn-download" onclick="downloadTable('offersTableMod')">Download Tabela</button>
 <table id="offersTableMod" border="1" cellpadding="5">
     <thead>
         <tr><th>País</th><th colspan="3">Compras (Demanda)</th><th colspan="3">Vendas (Oferta)</th></tr>
@@ -430,5 +432,25 @@ document.getElementById('offersTableMod').style.display = 'none';
 </script>
 <?php endif; ?>
 </div>
+<script>
+function downloadTable(tableId){
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  let csv = [];
+  const rows = table.querySelectorAll('tr');
+  rows.forEach(row => {
+    const cols = row.querySelectorAll('th,td');
+    const vals = Array.from(cols).map(c=>c.textContent.replace(/"/g,'""'));
+    csv.push('"' + vals.join('","') + '"');
+  });
+  const blob = new Blob([csv.join('\n')], {type: 'text/csv;charset=utf-8;'});
+  const link=document.createElement('a');
+  link.href=URL.createObjectURL(blob);
+  link.download=`${tableId}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+</script>
 </body>
 </html>
