@@ -34,6 +34,46 @@ if (!isset($result['data'])) {
 
 $rows = $result['data'];
 
+// CSV download logic -------------------------------------------------
+if (isset($_GET['download_csv'])) {
+    // Build full query to fetch all columns from offers
+    $fullQuery = "SELECT * FROM ofertas WHERE data = '$dia' AND periodo = $periodo AND status IN ('C', 'O')";
+    $urlFull   = "http://$host:$port/?user=$user&password=$password&default_format=JSON&query=" . urlencode($fullQuery);
+    $responseFull = @file_get_contents($urlFull);
+
+    if ($responseFull === false) {
+        http_response_code(500);
+        echo '<h1>Erro ao conectar no ClickHouse para download</h1>';
+        exit;
+    }
+
+    $resultFull = json_decode($responseFull, true);
+    if (!isset($resultFull['data'])) {
+        http_response_code(500);
+        echo '<h1>Formato inesperado da resposta do ClickHouse (download)</h1>';
+        exit;
+    }
+
+    $rowsFull = $resultFull['data'];
+
+    // Generate CSV content
+    $csv = '';
+    if (!empty($rowsFull)) {
+        $headers = array_keys($rowsFull[0]);
+        $csv .= implode(',', $headers) . "\n";
+        foreach ($rowsFull as $rowData) {
+            $escaped = array_map(function($value) { return '"' . str_replace('"', '""', $value) . '"'; }, $rowData);
+            $csv .= implode(',', $escaped) . "\n";
+        }
+    }
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="clearing_data_' . date('Ymd_His') . '.csv"');
+    echo $csv;
+    exit;
+}
+
+
 // Helper functions -----------------------------------------------------
 function hexToRgba(string $hex, float $alpha): string {
     $hex = ltrim($hex, '#');
@@ -283,7 +323,7 @@ new Chart(ctx, {
 </script>
 
 <h2>Detalhes das Ofertas</h2>
-<button id="toggleBtn" class="btn-toggle">Mostrar Tabela</button>
+<button id="toggleBtn" class="btn-toggle">Mostrar Tabela</button> <a href="?dia=<?= $dia ?>&periodo=<?= $periodo ?>&download_csv=1" class="btn-download">Download CSV</a>
 <table id="offersTable" border="1" cellpadding="5">
     <thead>
         <tr>
