@@ -343,6 +343,7 @@ foreach ($allCountries as $pais) {
 <?php endif; ?>
 <h2>Detalhes das Ofertas (Original)</h2>
 <button id="toggleBtn" class="btn-toggle">Mostrar Tabela</button>
+<button id="downloadBtnOriginal" class="btn-download">Download Tabela</button>
 <table id="offersTable" border="1" cellpadding="5">
     <thead>
         <tr><th>País</th><th colspan="3">Compras (Demanda)</th><th colspan="3">Vendas (Oferta)</th></tr>
@@ -392,6 +393,7 @@ document.getElementById('offersTable').style.display = 'none';
 <?php if ($lognormal_mu !== null && $lognormal_sigma !== null): ?>
 <h2>Detalhes das Ofertas (Modificado)</h2>
 <button id="toggleBtnMod" class="btn-toggle">Mostrar Tabela</button>
+<button id="downloadBtnModified" class="btn-download">Download Tabela</button>
 <table id="offersTableMod" border="1" cellpadding="5">
     <thead>
         <tr><th>País</th><th colspan="3">Compras (Demanda)</th><th colspan="3">Vendas (Oferta)</th></tr>
@@ -439,5 +441,41 @@ document.getElementById('offersTableMod').style.display = 'none';
 </script>
 <?php endif; ?>
 </div>
+<script>
+function downloadTable(tableId, filename) {
+    var table = document.getElementById(tableId);
+    if (!table) return;
+    var csv = [];
+    // Header
+    var headers = Array.from(table.querySelectorAll('thead th')).map(function(th){return th.textContent.trim();});
+    csv.push(headers.join(','));
+    // Rows
+    var rows = table.querySelectorAll('tbody tr');
+    rows.forEach(function(row){
+        var cols = Array.from(row.cells).map(function(td){return td.textContent.trim().replace(/"/g,'"\"');});
+        csv.push('"' + cols.join('","') + '"');
+    });
+    var blob = new Blob([csv.join('\n')], {type:'text/csv;charset=utf-8;'});
+    var link = document.createElement('a');
+    if (link.download !== undefined) {
+        var url = URL.createObjectURL(blob);
+        link.setAttribute('href',url);
+        link.setAttribute('download',filename);
+        link.style.visibility='hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+}
+
+document.getElementById('downloadBtnOriginal').addEventListener('click', function(){
+    downloadTable('offersTable','tabela_original.csv');
+});
+<?php if ($lognormal_mu !== null && $lognormal_sigma !== null): ?>
+document.getElementById('downloadBtnModified').addEventListener('click', function(){
+    downloadTable('offersTableMod','tabela_modificado.csv');
+});
+<?php endif; ?>
+</script>
 </body>
 </html>
