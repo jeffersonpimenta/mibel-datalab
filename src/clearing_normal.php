@@ -260,6 +260,7 @@ for ($b=$minPrice; $b <= $maxPrice; $b += $bucketSize) {
 	<a href="clearing_normal.php">Curva de Clearing com Distribuição Normal</a> |
 	<a href="frequency_distribution.php">Distribuição Bid</a> |
 	<a href="daily_clearing.php">Clearing price diário</a> |
+	<a href="frequency_distribution.php">Distribuição de frequência</a>
 </nav>
 <div class="selection-row"><form method="get" >
     <label for="dia">Data:</label>

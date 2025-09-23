@@ -79,6 +79,7 @@ if (isset($_GET['download_csv']) && !empty($_GET['query'])) {
 		<a href="clearing_normal.php">Curva de Clearing com Distribuição Normal</a> |
 		<a href="frequency_distribution.php">Distribuição Bid</a> |
 		<a href="daily_clearing.php">Clearing price diário</a> |
+		<a href="frequency_distribution.php">Distribuição de frequência</a>
 	</nav>
     <div id="presetQueries">
 	    <button type="button" onclick="setAndSubmit('DESCRIBE TABLE default.ofertas')">Descrever tabela</button>

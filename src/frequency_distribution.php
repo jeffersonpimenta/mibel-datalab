@@ -192,8 +192,8 @@ $displayDate = ($startDia === $endDia) ? $startDia : "$startDia a $endDia";
 	<a href="clearing_normal.php">Curva de Clearing com Distribuição Normal</a> |
 	<a href="frequency_distribution.php">Distribuição Bid</a> |
 	<a href="daily_clearing.php">Clearing price diário</a> |
+	<a href="frequency_distribution.php">Distribuição de frequência</a>
 </nav>
-
 <form method="get">
     <label for="pais">País:</label>
     <select id="pais" name="pais">

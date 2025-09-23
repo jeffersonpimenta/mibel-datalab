@@ -212,8 +212,8 @@ foreach ($colorMap as $pais => $colors) {
 	<a href="clearing_normal.php">Curva de Clearing com Distribuição Normal</a> |
 	<a href="frequency_distribution.php">Distribuição Bid</a> |
 	<a href="daily_clearing.php">Clearing price diário</a> |
+	<a href="frequency_distribution.php">Distribuição de frequência</a>
 </nav>
-
 <form method="get" style="margin-bottom:1rem;">
     <label for="dia">Data:</label>
     <input type="date" id="dia" name="dia" value="<?= htmlspecialchars($dia) ?>" required>
