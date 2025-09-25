@@ -258,7 +258,7 @@ new Chart(ctx, {
     }
 });
 </script>
-<p><a href="?<?= http_build_query(array_merge($_GET, ['download_raw'=>1])) ?>" class="btn">Download CSV</a></p>
+<p><button type="button" onclick="location.href='?<?= http_build_query(array_merge($_GET, ['download_raw'=>1])) ?>'" class="btn">Download CSV</button></p>
 <script>
 window.addEventListener('DOMContentLoaded', function(){
     var toggleBtn = document.getElementById('toggleTableBtn');

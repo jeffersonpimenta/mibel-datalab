@@ -324,7 +324,7 @@ new Chart(ctx, {
 </script>
 
 <h2>Detalhes das Ofertas</h2>
-<button id="toggleBtn" class="btn-toggle">Mostrar Tabela</button> <a href="?dia=<?= $dia ?>&periodo=<?= $periodo ?>&download_csv=1" class="btn-download">Download CSV</a>
+<button id="toggleBtn" class="btn-toggle">Mostrar Tabela</button> <button type="button" class="btn-download" onclick="location.href='?dia=<?= $dia ?>&periodo=<?= $periodo ?>&download_csv=1'">Download CSV</button>
 <table id="offersTable" border="1" cellpadding="5">
     <thead>
         <tr>
