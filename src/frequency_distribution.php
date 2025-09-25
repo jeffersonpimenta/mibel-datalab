@@ -153,7 +153,7 @@ $rawRows = $rawResult['data'];
 
 if ($downloadRaw) {
     header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="raw_data.csv"');
+    header('Content-Disposition: attachment; filename="mibel-datalab.csv"');
 
     $output = fopen('php://output', 'w');
     if (!empty($rawRows)) {
@@ -258,7 +258,8 @@ new Chart(ctx, {
     }
 });
 </script>
-<p><button type="button" onclick="location.href='?<?= http_build_query(array_merge($_GET, ['download_raw'=>1])) ?>'" class="btn">Download CSV</button></p>
+<button type="button" onclick="location.href='?<?= http_build_query(array_merge($_GET, ['download_raw'=>1])) ?>'" class="btn">Download</button>
+<button id="toggleTableBtn">Mostrar Tabela</button>
 <script>
 window.addEventListener('DOMContentLoaded', function(){
     var toggleBtn = document.getElementById('toggleTableBtn');
@@ -279,8 +280,7 @@ window.addEventListener('DOMContentLoaded', function(){
     });
 });
 </script>
-
-<h2>Tabela de Frequências <button id="toggleTableBtn">Mostrar Tabela</button></h2>
+<h2>Tabela de Frequências</h2>
 <table id="freqTable" border="1">
 <thead><tr><th>Bin</th><th>Frequência</th></tr></thead>
 <tbody>

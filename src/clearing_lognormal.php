@@ -344,7 +344,7 @@ foreach ($allCountries as $pais) {
 <?php endif; ?>
 <h2>Detalhes das Ofertas (Original)</h2>
 <button id="toggleBtn" class="btn-toggle">Mostrar Tabela</button>
-<button id="downloadBtnOriginal" class="btn-download">Download Tabela</button>
+<button id="downloadBtnOriginal" class="btn-download">Download</button>
 <table id="offersTable" border="1" cellpadding="5">
     <thead>
         <tr><th>País</th><th colspan="3">Compras (Demanda)</th><th colspan="3">Vendas (Oferta)</th></tr>

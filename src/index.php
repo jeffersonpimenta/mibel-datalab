@@ -43,7 +43,7 @@ if (isset($_GET['download_csv']) && !empty($_GET['query'])) {
         $result = json_decode($response, true);
         if (isset($result['data'])) {
             header('Content-Type: text/csv; charset=utf-8');
-            header('Content-Disposition: attachment; filename="table.csv"');
+            header('Content-Disposition: attachment; filename="mibel-datalab.csv"');
             $out = fopen('php://output', 'w');
             $rows = $result['data'];
             if (!empty($rows)) {
@@ -105,7 +105,7 @@ if (isset($_GET['download_csv']) && !empty($_GET['query'])) {
         <label for="query">Consulta SQL:</label>
         <textarea id="query" name="query" rows="4" cols="50"><?php echo htmlspecialchars($_POST['query'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea><br>
         <button type="submit">Executar Consulta</button>
-		<button type="button" class="btn" onclick="location.href='?download_csv=1&query=<?php echo urlencode($_POST['query'] ?? ''); ?>'">Download CSV da Tabela</button>
+		<button type="button" class="btn" onclick="location.href='?download_csv=1&query=<?php echo urlencode($_POST['query'] ?? ''); ?>'">Download</button>
     </form>
     <div id="result"><?php echo $output; ?></div>
 

@@ -68,7 +68,7 @@ if (isset($_GET['download_csv'])) {
     }
 
     header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="clearing_data_' . date('Ymd_His') . '.csv"');
+    header('Content-Disposition: attachment; filename="mibel-datalab.csv"');
     echo $csv;
     exit;
 }
@@ -324,7 +324,7 @@ new Chart(ctx, {
 </script>
 
 <h2>Detalhes das Ofertas</h2>
-<button id="toggleBtn" class="btn-toggle">Mostrar Tabela</button> <button type="button" class="btn-download" onclick="location.href='?dia=<?= $dia ?>&periodo=<?= $periodo ?>&download_csv=1'">Download CSV</button>
+<button id="toggleBtn" class="btn-toggle">Mostrar Tabela</button> <button type="button" class="btn-download" onclick="location.href='?dia=<?= $dia ?>&periodo=<?= $periodo ?>&download_csv=1'">Download</button>
 <table id="offersTable" border="1" cellpadding="5">
     <thead>
         <tr>
