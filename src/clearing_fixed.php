@@ -330,7 +330,7 @@ document.getElementById('offersTable').style.display = 'none';
 <?php if ($fixed_pre !== null): ?>
 <h2>Detalhes das Ofertas (Modificado)</h2>
 <button id="toggleBtnMod" class="btn-toggle">Mostrar Tabela</button>
-<button id="downloadModifiedBtn" class="btn-download">Download Tabela Modificada</button>
+<button id="downloadModifiedBtn" class="btn-download">Download</button>
 <table id="offersTableMod" border="1" cellpadding="5">
     <thead>
         <tr><th>País</th><th colspan="3">Compras (Demanda)</th><th colspan="3">Vendas (Oferta)</th></tr>
