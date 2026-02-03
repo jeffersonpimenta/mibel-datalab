@@ -145,21 +145,35 @@ if ($hasMI) {
     $processOffers($vendas, true);
 
     // Calculate clearing price (global)
-    $clearingPrice  = null;
-    $clearingVolume = null;
-    foreach ($vendas as $sell) {
-        $demandaMax = array_sum(
-            array_column(
-                array_filter($compras, function ($c) use ($sell) { return $c['preco'] >= $sell['preco']; }),
-                'volume'
-            )
-        );
-        if ($sell['vol_acum'] >= $demandaMax && $demandaMax > 0) {
-            $clearingPrice  = round($sell['preco'], 2);
-            $clearingVolume = $demandaMax;
-            break;
-        }
-    }
+	$i = 0;
+	$j = 0;
+
+	$clearingPrice  = null;
+	$clearingVolume = null;
+
+	while ($i < count($compras) && $j < count($vendas)) {
+		$buy  = $compras[$i];
+		$sell = $vendas[$j];
+
+		// condição de cruzamento de preços
+		if ($buy['preco'] < $sell['preco']) {
+			break;
+		}
+
+		// volumes acumulados CORRETOS no preço marginal
+		$demanda = $buy['vol_acum'];
+		$oferta  = $sell['vol_acum'];
+
+		$clearingPrice  = round($sell['preco'], 2);
+		$clearingVolume = min($demanda, $oferta);
+
+		// avança quem "esgotou" primeiro
+		if ($demanda <= $oferta) {
+			$i++;
+		} else {
+			$j++;
+		}
+	}
 
     $clearingResults['MI'] = ['price'=>$clearingPrice, 'volume'=>$clearingVolume];
 
@@ -201,21 +215,35 @@ if ($hasMI) {
         $processOffers($compras, false); // descending for compras (higher price first)
         $processOffers($vendas, true);   // ascending for vendas (lower price first)
         // Calculate clearing price per country ----------------------------
-        $clearingPrice  = null;
-        $clearingVolume = null;
-        foreach ($vendas as $sell) {
-            $demandaMax = array_sum(
-                array_column(
-                    array_filter($compras, function ($c) use ($sell) { return $c['preco'] >= $sell['preco']; }),
-                    'volume'
-                )
-            );
-            if ($sell['vol_acum'] >= $demandaMax && $demandaMax > 0) {
-                $clearingPrice  = round($sell['preco'], 2);
-                $clearingVolume = $demandaMax;
-                break;
-            }
-        }
+		$i = 0;
+		$j = 0;
+
+		$clearingPrice  = null;
+		$clearingVolume = null;
+
+		while ($i < count($compras) && $j < count($vendas)) {
+			$buy  = $compras[$i];
+			$sell = $vendas[$j];
+
+			// condição de cruzamento de preços
+			if ($buy['preco'] < $sell['preco']) {
+				break;
+			}
+
+			// volumes acumulados CORRETOS no preço marginal
+			$demanda = $buy['vol_acum'];
+			$oferta  = $sell['vol_acum'];
+
+			$clearingPrice  = round($sell['preco'], 2);
+			$clearingVolume = min($demanda, $oferta);
+
+			// avança quem "esgotou" primeiro
+			if ($demanda <= $oferta) {
+				$i++;
+			} else {
+				$j++;
+			}
+		}
 
         $clearingResults[$pais] = ['price'=>$clearingPrice, 'volume'=>$clearingVolume];
 
