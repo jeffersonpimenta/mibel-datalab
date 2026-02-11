@@ -159,8 +159,10 @@ function processClearing(array $rows): array {
         $processOffers($compras, false);
         $processOffers($vendas, true);
 
+		// Calculate clearing price (global)
 		$i = 0;
 		$j = 0;
+		$iavancou = false; // Controla qual índice avançou por último
 
 		$clearingPrice  = null;
 		$clearingVolume = null;
@@ -169,25 +171,29 @@ function processClearing(array $rows): array {
 			$buy  = $compras[$i];
 			$sell = $vendas[$j];
 
-			// condição de cruzamento de preços
-			if ($buy['preco'] < $sell['preco']) {
+			// Condição de cruzamento de preços (A compra ficou barata demais ou a venda cara demais)
+			if (round($buy['preco'], 2) < round($sell['preco'], 2)) {
+				
+				if ($iavancou) { // O último incremento foi na COMPRA (i aumentou)
+					$clearingVolume = $compras[$i]['vol_acum'];
+					$clearingPrice = round($vendas[$j]['preco'], 2);
+				} else { // O último incremento foi na VENDA (j aumentou)
+					$clearingVolume = $vendas[$j]['vol_acum'];
+					$clearingPrice = round($compras[$i]['preco'], 2);
+				}
 				break;
 			}
 
-			// volumes acumulados CORRETOS no preço marginal
-			$demanda = $buy['vol_acum'];
-			$oferta  = $sell['vol_acum'];
-
-			$clearingPrice  = round($sell['preco'], 2);
-			$clearingVolume = min($demanda, $oferta);
-
-			// avança quem "esgotou" primeiro
-			if ($demanda <= $oferta) {
+			// Lógica de avanço normal enquanto há casamento de preço
+			if (round($compras[$i]['vol_acum'], 2) < round($vendas[$j]['vol_acum'], 2)) {
 				$i++;
+				$iavancou = true;
 			} else {
 				$j++;
+				$iavancou = false;
 			}
 		}
+		
         $clearingResults['MI'] = ['price'=>$clearingPrice, 'volume'=>$clearingVolume];
 
         $comprasColor = '#1f77b4'; $vendasColor  = '#ff7f0e';
@@ -210,8 +216,10 @@ function processClearing(array $rows): array {
             $processOffers($compras, false);
             $processOffers($vendas, true);
 
+			// Calculate clearing price per country ----------------------------
 			$i = 0;
 			$j = 0;
+			$iavancou = false; // Controla qual índice avançou por último
 
 			$clearingPrice  = null;
 			$clearingVolume = null;
@@ -220,25 +228,29 @@ function processClearing(array $rows): array {
 				$buy  = $compras[$i];
 				$sell = $vendas[$j];
 
-				// condição de cruzamento de preços
-				if ($buy['preco'] < $sell['preco']) {
+				// Condição de cruzamento de preços (A compra ficou barata demais ou a venda cara demais)
+				if (round($buy['preco'], 2) < round($sell['preco'], 2)) {
+					
+					if ($iavancou) { // O último incremento foi na COMPRA (i aumentou)
+						$clearingVolume = $compras[$i]['vol_acum'];
+						$clearingPrice = round($vendas[$j]['preco'], 2);
+					} else { // O último incremento foi na VENDA (j aumentou)
+						$clearingVolume = $vendas[$j]['vol_acum'];
+						$clearingPrice = round($compras[$i]['preco'], 2);
+					}
 					break;
 				}
 
-				// volumes acumulados CORRETOS no preço marginal
-				$demanda = $buy['vol_acum'];
-				$oferta  = $sell['vol_acum'];
-
-				$clearingPrice  = round($sell['preco'], 2);
-				$clearingVolume = min($demanda, $oferta);
-
-				// avança quem "esgotou" primeiro
-				if ($demanda <= $oferta) {
+				// Lógica de avanço normal enquanto há casamento de preço
+				if (round($compras[$i]['vol_acum'], 2) < round($vendas[$j]['vol_acum'], 2)) {
 					$i++;
+					$iavancou = true;
 				} else {
 					$j++;
+					$iavancou = false;
 				}
 			}
+			
             $clearingResults[$pais] = ['price'=>$clearingPrice, 'volume'=>$clearingVolume];
 
             $colorMap = [
