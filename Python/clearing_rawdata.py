@@ -57,12 +57,39 @@ def clearing_price_with_plot(bids_text,pais="MI",periodo="H1Q1",verbose=True,plo
         if round(compras.iloc[i]["Precio Compra/Venta"],2) < round(vendas.iloc[j]["Precio Compra/Venta"],2):
             
             if iavancou: # O último incremento foi na COMPRA (i aumentou)
-                clearing_volume = compras.iloc[i]["Volume_Acumulado"]
-                clearing_price = vendas.iloc[j]["Precio Compra/Venta"]
+                print(1)
+                while ((vendas.iloc[j]["Precio Compra/Venta"]<=compras.iloc[i-1]["Precio Compra/Venta"])and(vendas.iloc[j]["Volume_Acumulado"]<=compras.iloc[i]["Volume_Acumulado"])):
+                    j=j+1 # Avança as compras até que o volume esteja englobado na última bid
+                    if verbose:
+                        print(f"C:{i}({compras.iloc[i]['Precio Compra/Venta']:.4f}) V:{j}({vendas.iloc[j]['Precio Compra/Venta']:.4f}) | VolC:{compras.iloc[i]['Volume_Acumulado']:.2f} VolV:{vendas.iloc[j]['Volume_Acumulado']:.2f}")
+                        
+                while ((vendas.iloc[j-1]["Precio Compra/Venta"]<=compras.iloc[i]["Precio Compra/Venta"])and(vendas.iloc[j]["Volume_Acumulado"]>=compras.iloc[i]["Volume_Acumulado"])):
+                    i=i+1 # Avança as compras até que o volume esteja englobado na última bid
+                    if verbose:
+                        print(f"C:{i}({compras.iloc[i]['Precio Compra/Venta']:.4f}) V:{j}({vendas.iloc[j]['Precio Compra/Venta']:.4f}) | VolC:{compras.iloc[i]['Volume_Acumulado']:.2f} VolV:{vendas.iloc[j]['Volume_Acumulado']:.2f}")                        
+                if compras.iloc[i]["Volume_Acumulado"] >= vendas.iloc[j]["Volume_Acumulado"]:
+                    clearing_volume = vendas.iloc[j]["Volume_Acumulado"]
+                    clearing_price = compras.iloc[i-1]["Precio Compra/Venta"]
+                else:
+                    clearing_volume = compras.iloc[i]["Volume_Acumulado"]
+                    clearing_price = vendas.iloc[j-1]["Precio Compra/Venta"] 
             
-            else: # O último incremento foi na VENDA (j aumentou)
-                clearing_volume = vendas.iloc[j]["Volume_Acumulado"]
-                clearing_price = compras.iloc[i]["Precio Compra/Venta"]
+            else: # O último incremento foi na VENDA (j aumedntou)
+                while ((vendas.iloc[j-1]["Precio Compra/Venta"]<=compras.iloc[i]["Precio Compra/Venta"])and(vendas.iloc[j]["Volume_Acumulado"]>=compras.iloc[i]["Volume_Acumulado"])):
+                    i=i+1 # Avança as compras até que o volume esteja englobado na última bid 
+                    if verbose:
+                        print(f"C:{i}({compras.iloc[i]['Precio Compra/Venta']:.4f}) V:{j}({vendas.iloc[j]['Precio Compra/Venta']:.4f}) | VolC:{compras.iloc[i]['Volume_Acumulado']:.2f} VolV:{vendas.iloc[j]['Volume_Acumulado']:.2f}")
+                        
+                while ((vendas.iloc[j]["Precio Compra/Venta"]<=compras.iloc[i-1]["Precio Compra/Venta"])and(vendas.iloc[j]["Volume_Acumulado"]>=compras.iloc[i]["Volume_Acumulado"])):
+                    i=i+1 # Avança as compras até que o volume esteja englobado na última bid
+                    if verbose:
+                        print(f"C:{i}({compras.iloc[i]['Precio Compra/Venta']:.4f}) V:{j}({vendas.iloc[j]['Precio Compra/Venta']:.4f}) | VolC:{compras.iloc[i]['Volume_Acumulado']:.2f} VolV:{vendas.iloc[j]['Volume_Acumulado']:.2f}")                        
+                if compras.iloc[i]["Volume_Acumulado"] >= vendas.iloc[j]["Volume_Acumulado"]:
+                    clearing_volume = vendas.iloc[j]["Volume_Acumulado"]
+                    clearing_price = compras.iloc[i-1]["Precio Compra/Venta"]
+                else:
+                    clearing_volume = compras.iloc[i]["Volume_Acumulado"]
+                    clearing_price = vendas.iloc[j-1]["Precio Compra/Venta"] 
             break
             
         # Lógica de avanço normal enquanto há casamento de preço
@@ -92,7 +119,7 @@ def clearing_price_with_plot(bids_text,pais="MI",periodo="H1Q1",verbose=True,plo
         plt.step(
             vendas["Volume_Acumulado"],
             vendas["Precio Compra/Venta"],
-            where="pre",
+            where="post",
             label="Oferta (Vendas)"
         )
 
