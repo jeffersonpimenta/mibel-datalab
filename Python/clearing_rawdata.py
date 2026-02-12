@@ -57,7 +57,6 @@ def clearing_price_with_plot(bids_text,pais="MI",periodo="H1Q1",verbose=True,plo
         if round(compras.iloc[i]["Precio Compra/Venta"],2) < round(vendas.iloc[j]["Precio Compra/Venta"],2):
             
             if iavancou: # O último incremento foi na COMPRA (i aumentou)
-                print(1)
                 while ((vendas.iloc[j]["Precio Compra/Venta"]<=compras.iloc[i-1]["Precio Compra/Venta"])and(vendas.iloc[j]["Volume_Acumulado"]<=compras.iloc[i]["Volume_Acumulado"])):
                     j=j+1 # Avança as compras até que o volume esteja englobado na última bid
                     if verbose:
