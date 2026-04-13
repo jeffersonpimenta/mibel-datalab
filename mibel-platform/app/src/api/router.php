@@ -197,6 +197,11 @@ try {
         cancelar($matches[1]);
     }
 
+    if (preg_match('#^/estudos/([a-f0-9-]{36})$#', $path, $matches) && $method === 'DELETE') {
+        require_once __DIR__ . '/estudos.php';
+        destroy($matches[1]);
+    }
+
     // -------------------------------------------------------------------------
     // Resultados Routes
     // -------------------------------------------------------------------------

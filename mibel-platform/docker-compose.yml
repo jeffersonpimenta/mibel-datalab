@@ -17,7 +17,7 @@ services:
     build:
       context: ./docker/php
     volumes:
-      - ./app:/var/www/html
+      - ./app/public:/var/www/html
       - ./data:/data
     depends_on:
       - clickhouse
