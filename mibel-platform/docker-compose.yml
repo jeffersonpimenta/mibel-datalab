@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./app/public:/var/www/html:ro
+    depends_on:
+      - php
+    networks:
+      - mibel-net
+
+  php:
+    build:
+      context: ./docker/php
+    volumes:
+      - ./app:/var/www/html
+      - ./data:/data
+    depends_on:
+      - clickhouse
+    networks:
+      - mibel-net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24
+    ports:
+      - "8123:8123"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./data/clickhouse:/var/lib/clickhouse/user_files
+    environment:
+      - CLICKHOUSE_DB=mibel
+    networks:
+      - mibel-net
+
+  python-worker:
+    build:
+      context: ./docker/python
+    volumes:
+      - ./workers:/app
+      - ./data:/data
+      - ./scripts:/scripts:ro
+    command: tail -f /dev/null
+    depends_on:
+      - clickhouse
+    networks:
+      - mibel-net
+
+networks:
+  mibel-net:
+    driver: bridge
+
+volumes:
+  clickhouse-data:
