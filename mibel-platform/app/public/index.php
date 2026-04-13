@@ -123,9 +123,62 @@
              TAB 2: Parâmetros de Substituição
              ================================================================ -->
         <div id="tab-parametros" class="tab-content">
-            <div class="placeholder">
-                <h3>Parâmetros de Substituição</h3>
-                <p class="text-muted">Em construção — será implementado na TASK-05</p>
+            <!-- Header with actions -->
+            <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+                <div>
+                    <h2 style="margin:0 0 0.25rem">Parâmetros de Substituição</h2>
+                    <span class="text-muted text-sm">Configure escalas e escalões de preço por categoria</span>
+                </div>
+                <div class="flex gap-2">
+                    <button class="btn btn-secondary" onclick="ParametrosTab.resetDefaults()">
+                        Repor Padrões
+                    </button>
+                    <button class="btn btn-primary" onclick="ParametrosTab.saveAll()">
+                        Guardar Tudo
+                    </button>
+                </div>
+            </div>
+
+            <!-- Add Category Form -->
+            <div class="card mb-3" id="add-categoria-card" style="display:none">
+                <div class="card-header">
+                    <h2>Adicionar Nova Categoria</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="ParametrosTab.toggleAddCategoria()">Cancelar</button>
+                </div>
+                <div class="card-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Regime</label>
+                            <select id="add-cat-regime" class="form-select">
+                                <option value="PRE">PRE</option>
+                                <option value="PRO">PRO</option>
+                                <option value="CONSUMO">CONSUMO</option>
+                                <option value="COMERCIALIZADOR">COMERCIALIZADOR</option>
+                                <option value="GENERICA">GENERICA</option>
+                                <option value="PORFOLIO">PORFOLIO</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:2">
+                            <label class="form-label">Categoria Zona (ex: SOLAR_FOT_ES)</label>
+                            <input type="text" id="add-cat-nome" class="form-input" placeholder="CATEGORIA_ZONA">
+                        </div>
+                        <div class="form-group" style="flex:0 0 auto">
+                            <label class="form-label">&nbsp;</label>
+                            <button class="btn btn-success" onclick="ParametrosTab.addCategoria()">Adicionar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn btn-secondary mb-3" id="btn-add-categoria" onclick="ParametrosTab.toggleAddCategoria()">
+                + Adicionar Categoria
+            </button>
+
+            <!-- Regime Cards Container -->
+            <div id="parametros-container">
+                <div class="loading">
+                    <span class="spinner"></span> A carregar parâmetros...
+                </div>
             </div>
         </div>
 

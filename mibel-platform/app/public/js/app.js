@@ -498,6 +498,387 @@ const ClassificacaoTab = {
 };
 
 // ============================================================================
+// Parametros Tab (Tab 2)
+// ============================================================================
+
+const ParametrosTab = {
+    params: {},
+    loaded: false,
+    collapsedRegimes: {},
+
+    async init() {
+        if (!this.loaded) {
+            await this.loadData();
+            this.loaded = true;
+        }
+        this.render();
+    },
+
+    async loadData() {
+        try {
+            this.params = await apiGet('/api/parametros');
+        } catch (e) {
+            toast('Erro ao carregar parâmetros: ' + e.message, 'error');
+        }
+    },
+
+    render() {
+        const container = document.getElementById('parametros-container');
+        if (!container) return;
+
+        let html = '';
+
+        REGIMES.forEach(regime => {
+            const categorias = this.params[regime] || {};
+            const categoriasKeys = Object.keys(categorias).sort();
+            const isCollapsed = this.collapsedRegimes[regime] || false;
+
+            html += `
+                <div class="card card-collapsible ${isCollapsed ? 'collapsed' : ''}" data-regime="${regime}">
+                    <div class="card-header" onclick="ParametrosTab.toggleRegime('${regime}')">
+                        <h2>
+                            <span class="collapse-icon">▼</span>
+                            ${regime}
+                            <span class="badge">${categoriasKeys.length} categorias</span>
+                        </h2>
+                    </div>
+                    <div class="card-body">
+                        ${categoriasKeys.length === 0 ?
+                            '<p class="text-muted text-center">Nenhuma categoria definida</p>' :
+                            categoriasKeys.map(catZona => this.renderCategoria(regime, catZona, categorias[catZona])).join('')
+                        }
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    },
+
+    renderCategoria(regime, categoriaZona, config) {
+        const isPRE = regime === 'PRE';
+        const escala = config.escala || 1.0;
+        const escaloes = config.escaloes || [];
+        const hasDelta = config.delta_preco !== undefined;
+        const deltaPreco = config.delta_preco || 0;
+
+        let html = `
+            <div class="categoria-item" data-categoria="${categoriaZona}">
+                <div class="categoria-header">
+                    <h4>${categoriaZona}</h4>
+                    <button class="btn btn-danger btn-sm btn-icon" onclick="ParametrosTab.removeCategoria('${regime}', '${categoriaZona}')" title="Remover">×</button>
+                </div>
+                <div class="categoria-content">
+                    <div class="param-field">
+                        <label>Escala de volume</label>
+                        <input type="number"
+                               step="0.001"
+                               min="0.01"
+                               value="${escala}"
+                               data-regime="${regime}"
+                               data-categoria="${categoriaZona}"
+                               data-field="escala"
+                               onchange="ParametrosTab.onFieldChange(this)">
+                    </div>
+        `;
+
+        // Escaloes only for PRE regime
+        if (isPRE) {
+            html += `
+                    <div class="escaloes-container">
+                        <h5>Escalões de Preço</h5>
+                        <table class="escaloes-table">
+                            <thead>
+                                <tr>
+                                    <th>Preço (€/MWh)</th>
+                                    <th>% Volume</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="escaloes-${regime}-${categoriaZona}">
+                                ${escaloes.map((esc, idx) => `
+                                    <tr data-index="${idx}">
+                                        <td>
+                                            <input type="number" step="0.1" min="0" value="${esc.preco}"
+                                                   data-regime="${regime}" data-categoria="${categoriaZona}"
+                                                   data-field="escalao-preco" data-index="${idx}"
+                                                   onchange="ParametrosTab.onEscalaoChange(this)">
+                                        </td>
+                                        <td>
+                                            <input type="number" step="0.01" min="0" max="1" value="${esc.pct_bids}"
+                                                   data-regime="${regime}" data-categoria="${categoriaZona}"
+                                                   data-field="escalao-pct" data-index="${idx}"
+                                                   onchange="ParametrosTab.onEscalaoChange(this)">
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-danger btn-sm btn-icon"
+                                                    onclick="ParametrosTab.removeEscalao('${regime}', '${categoriaZona}', ${idx})">−</button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                        <div class="escaloes-sum ${this.getEscaloesSum(escaloes) === 1 ? 'valid' : 'invalid'}"
+                             id="sum-${regime}-${categoriaZona}">
+                            Soma: ${(this.getEscaloesSum(escaloes) * 100).toFixed(1)}%
+                            ${this.getEscaloesSum(escaloes) === 1 ? '✓' : '(deve ser 100%)'}
+                        </div>
+                        <button class="btn btn-secondary btn-sm btn-add-escalao"
+                                onclick="ParametrosTab.addEscalao('${regime}', '${categoriaZona}')">
+                            + Escalão
+                        </button>
+                    </div>
+            `;
+        }
+
+        // Delta price (optional for all)
+        html += `
+                    <div class="delta-field">
+                        <label>
+                            <input type="checkbox"
+                                   ${hasDelta ? 'checked' : ''}
+                                   data-regime="${regime}"
+                                   data-categoria="${categoriaZona}"
+                                   data-field="has-delta"
+                                   onchange="ParametrosTab.onDeltaToggle(this)">
+                            Delta preço
+                        </label>
+                        <input type="number" step="0.1" value="${deltaPreco}"
+                               ${!hasDelta ? 'disabled' : ''}
+                               data-regime="${regime}"
+                               data-categoria="${categoriaZona}"
+                               data-field="delta_preco"
+                               onchange="ParametrosTab.onFieldChange(this)">
+                    </div>
+                </div>
+            </div>
+        `;
+
+        return html;
+    },
+
+    getEscaloesSum(escaloes) {
+        if (!escaloes || escaloes.length === 0) return 0;
+        const sum = escaloes.reduce((acc, e) => acc + (parseFloat(e.pct_bids) || 0), 0);
+        return Math.round(sum * 100) / 100;
+    },
+
+    toggleRegime(regime) {
+        this.collapsedRegimes[regime] = !this.collapsedRegimes[regime];
+        const card = document.querySelector(`.card-collapsible[data-regime="${regime}"]`);
+        if (card) {
+            card.classList.toggle('collapsed', this.collapsedRegimes[regime]);
+        }
+    },
+
+    onFieldChange(input) {
+        const { regime, categoria, field } = input.dataset;
+        const value = parseFloat(input.value);
+
+        if (!this.params[regime]) this.params[regime] = {};
+        if (!this.params[regime][categoria]) this.params[regime][categoria] = { escala: 1.0 };
+
+        this.params[regime][categoria][field] = value;
+    },
+
+    onEscalaoChange(input) {
+        const { regime, categoria, field, index } = input.dataset;
+        const idx = parseInt(index);
+        const value = parseFloat(input.value);
+
+        if (!this.params[regime]?.[categoria]?.escaloes) return;
+
+        if (field === 'escalao-preco') {
+            this.params[regime][categoria].escaloes[idx].preco = value;
+        } else if (field === 'escalao-pct') {
+            this.params[regime][categoria].escaloes[idx].pct_bids = value;
+        }
+
+        // Update sum display
+        this.updateEscaloesSum(regime, categoria);
+    },
+
+    updateEscaloesSum(regime, categoria) {
+        const escaloes = this.params[regime]?.[categoria]?.escaloes || [];
+        const sum = this.getEscaloesSum(escaloes);
+        const sumEl = document.getElementById(`sum-${regime}-${categoria}`);
+        if (sumEl) {
+            sumEl.className = `escaloes-sum ${sum === 1 ? 'valid' : 'invalid'}`;
+            sumEl.innerHTML = `Soma: ${(sum * 100).toFixed(1)}% ${sum === 1 ? '✓' : '(deve ser 100%)'}`;
+        }
+    },
+
+    onDeltaToggle(checkbox) {
+        const { regime, categoria } = checkbox.dataset;
+        const deltaInput = document.querySelector(
+            `input[data-regime="${regime}"][data-categoria="${categoria}"][data-field="delta_preco"]`
+        );
+
+        if (checkbox.checked) {
+            deltaInput.disabled = false;
+            this.params[regime][categoria].delta_preco = parseFloat(deltaInput.value) || 0;
+        } else {
+            deltaInput.disabled = true;
+            delete this.params[regime][categoria].delta_preco;
+        }
+    },
+
+    addEscalao(regime, categoria) {
+        if (!this.params[regime]?.[categoria]) return;
+
+        if (!this.params[regime][categoria].escaloes) {
+            this.params[regime][categoria].escaloes = [];
+        }
+
+        this.params[regime][categoria].escaloes.push({ preco: 0, pct_bids: 0 });
+        this.render();
+    },
+
+    removeEscalao(regime, categoria, index) {
+        if (!this.params[regime]?.[categoria]?.escaloes) return;
+
+        this.params[regime][categoria].escaloes.splice(index, 1);
+        this.render();
+    },
+
+    toggleAddCategoria() {
+        const card = document.getElementById('add-categoria-card');
+        const btn = document.getElementById('btn-add-categoria');
+        if (card.style.display === 'none') {
+            card.style.display = 'block';
+            btn.style.display = 'none';
+        } else {
+            card.style.display = 'none';
+            btn.style.display = 'inline-flex';
+        }
+    },
+
+    addCategoria() {
+        const regime = document.getElementById('add-cat-regime').value;
+        const nome = document.getElementById('add-cat-nome').value.trim().toUpperCase();
+
+        if (!nome) {
+            toast('Preencha o nome da categoria', 'warning');
+            return;
+        }
+
+        if (!this.params[regime]) {
+            this.params[regime] = {};
+        }
+
+        if (this.params[regime][nome]) {
+            toast('Categoria já existe neste regime', 'error');
+            return;
+        }
+
+        // Create with defaults
+        this.params[regime][nome] = { escala: 1.0 };
+        if (regime === 'PRE') {
+            this.params[regime][nome].escaloes = [{ preco: 0, pct_bids: 1.0 }];
+        }
+
+        toast('Categoria adicionada', 'success');
+        this.toggleAddCategoria();
+        document.getElementById('add-cat-nome').value = '';
+        this.render();
+    },
+
+    removeCategoria(regime, categoria) {
+        if (!confirm(`Remover categoria "${categoria}"?`)) return;
+
+        if (this.params[regime]?.[categoria]) {
+            delete this.params[regime][categoria];
+            toast('Categoria removida', 'success');
+            this.render();
+        }
+    },
+
+    async saveAll() {
+        try {
+            const result = await apiPut('/api/parametros', this.params);
+            if (result.error) {
+                toast(result.error, 'error');
+            } else {
+                toast('Parâmetros guardados com sucesso', 'success');
+            }
+        } catch (e) {
+            toast('Erro ao guardar: ' + e.message, 'error');
+        }
+    },
+
+    async resetDefaults() {
+        if (!confirm('Repor todos os parâmetros para os valores padrão? Esta acção não pode ser desfeita.')) {
+            return;
+        }
+
+        // Default parameters (same as TASK-02 migrate.php)
+        this.params = {
+            "PRE": {
+                "SOLAR_FOT_ES": {"escala": 2.2297, "escaloes": [{"preco": 0.0, "pct_bids": 0.30}, {"preco": 20.0, "pct_bids": 0.30}, {"preco": 35.0, "pct_bids": 0.40}]},
+                "SOLAR_FOT_PT": {"escala": 3.6879, "escaloes": [{"preco": 0.0, "pct_bids": 0.30}, {"preco": 20.0, "pct_bids": 0.30}, {"preco": 35.0, "pct_bids": 0.40}]},
+                "SOLAR_TER_ES": {"escala": 2.0869, "escaloes": [{"preco": 40.0, "pct_bids": 1.00}]},
+                "EOLICA_ES": {"escala": 1.8857, "escaloes": [{"preco": 50.0, "pct_bids": 0.50}, {"preco": 70.0, "pct_bids": 0.50}]},
+                "EOLICA_PT": {"escala": 2.1379, "escaloes": [{"preco": 50.0, "pct_bids": 0.50}, {"preco": 70.0, "pct_bids": 0.50}]},
+                "EOLICA_MARINA_ES": {"escala": 1.0, "escaloes": [{"preco": 0.0, "pct_bids": 1.00}]},
+                "HIDRICA_ES": {"escala": 1.0, "escaloes": [{"preco": 15.0, "pct_bids": 1.00}]},
+                "TERMICA_RENOV_ES": {"escala": 1.4, "escaloes": [{"preco": 10.0, "pct_bids": 1.00}]},
+                "TERMICA_RENOV_PT": {"escala": 1.5348, "escaloes": [{"preco": 10.0, "pct_bids": 1.00}]},
+                "TERMICA_NREN_ES": {"escala": 1.0, "escaloes": [{"preco": 60.0, "pct_bids": 1.00}]},
+                "GEOTERMICA_ES": {"escala": 1.0, "escaloes": [{"preco": 30.0, "pct_bids": 1.00}]},
+                "HIBRIDA_RENOV_ES": {"escala": 1.0, "escaloes": [{"preco": 45.0, "pct_bids": 1.00}]},
+                "RE_TARIFA_CUR_ES": {"escala": 1.7, "escaloes": [{"preco": 0.0, "pct_bids": 1.00}]},
+                "RE_TARIFA_CUR_PT": {"escala": 1.7, "escaloes": [{"preco": 0.0, "pct_bids": 1.00}]},
+                "RE_OUTRO_ES": {"escala": 1.0, "escaloes": [{"preco": 0.0, "pct_bids": 1.00}]},
+                "ARMAZENAMENTO_VENDA_ES": {"escala": 1.0, "escaloes": [{"preco": 0.0, "pct_bids": 1.00}]},
+                "ARMAZENAMENTO_VENDA_PT": {"escala": 1.0, "escaloes": [{"preco": 0.0, "pct_bids": 1.00}]}
+            },
+            "PRO": {
+                "BOMBEO_PURO_PRO_ES": {"escala": 1.0},
+                "CARVAO_ES": {"escala": 1.0},
+                "CICLO_COMBINADO_ES": {"escala": 1.0},
+                "CICLO_COMBINADO_PT": {"escala": 0.7143},
+                "GAS_ES": {"escala": 1.0},
+                "HIDRICA_PRO_ES": {"escala": 1.0},
+                "HIDRICA_PRO_PT": {"escala": 1.0},
+                "NUCLEAR_ES": {"escala": 0.447}
+            },
+            "CONSUMO": {
+                "ARMAZENAMENTO_COMPRA_ES": {"escala": 1.0},
+                "ARMAZENAMENTO_COMPRA_PT": {"escala": 1.0},
+                "BOMBEO_CONSUMO_ES": {"escala": 1.6926},
+                "BOMBEO_CONSUMO_PT": {"escala": 1.3871},
+                "CONS_AUXILIARES_ES": {"escala": 1.0},
+                "CONS_DIRECTO_ES": {"escala": 1.6926},
+                "CONS_DIRECTO_EXT": {"escala": 1.6926},
+                "CONS_PRODUTOR_ES": {"escala": 1.0}
+            },
+            "COMERCIALIZADOR": {
+                "COMERC_ES": {"escala": 1.3871},
+                "COMERC_EXT": {"escala": 1.0},
+                "COMERC_NR_EXT": {"escala": 1.0},
+                "COMERC_PT": {"escala": 1.6926},
+                "COMERC_ULT_REC_ES": {"escala": 1.0},
+                "COMERC_ULT_REC_PT": {"escala": 1.0}
+            },
+            "GENERICA": {
+                "GENERICA_ES": {"escala": 1.3871},
+                "GENERICA_PT": {"escala": 1.6926},
+                "GENERICA_VENDA_ES": {"escala": 1.3871},
+                "GENERICA_VENDA_PT": {"escala": 1.6926}
+            },
+            "PORFOLIO": {
+                "PORTF_COMERC_ES": {"escala": 1.0},
+                "PORTF_PROD_ES": {"escala": 1.0},
+                "PORTF_PROD_PT": {"escala": 1.0}
+            }
+        };
+
+        this.render();
+        toast('Parâmetros repostos para valores padrão', 'info');
+    }
+};
+
+// ============================================================================
 // Initialize Application
 // ============================================================================
 
@@ -518,6 +899,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('tabLoad', (e) => {
         if (e.detail.tabId === 'classificacao') {
             ClassificacaoTab.init();
+        } else if (e.detail.tabId === 'parametros') {
+            ParametrosTab.init();
         }
         // Other tabs will be initialized in future tasks
     });

@@ -168,6 +168,11 @@ try {
         update();
     }
 
+    if ($path === '/parametros/categorias' && $method === 'GET') {
+        require_once __DIR__ . '/parametros.php';
+        categorias();
+    }
+
     // -------------------------------------------------------------------------
     // Estudos (Jobs) Routes
     // -------------------------------------------------------------------------
