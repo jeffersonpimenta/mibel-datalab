@@ -20,6 +20,7 @@
         <button data-tab="parametros">Parâmetros</button>
         <button data-tab="estudos">Estudos</button>
         <button data-tab="resultados">Resultados</button>
+        <button data-tab="ingestao">Ingestão de Dados</button>
     </nav>
 
     <main>
@@ -374,6 +375,76 @@
 
             </div><!-- /#res-content -->
         </div>
+
+        <!-- ================================================================
+             TAB 5: Ingestão de Dados
+             ================================================================ -->
+        <div id="tab-ingestao" class="tab-content">
+
+            <div class="flex justify-between items-center mb-3">
+                <div>
+                    <h2 style="margin:0 0 0.25rem">Ingestão de Dados</h2>
+                    <span class="text-muted text-sm">Carregue ficheiros ZIP mensais de bids OMIE para /data/bids</span>
+                </div>
+                <span id="ingestao-counter" class="badge">A carregar...</span>
+            </div>
+
+            <!-- Drop Zone -->
+            <div class="card mb-3">
+                <div class="card-body" style="padding:0">
+                    <div id="ingestao-dropzone" class="ingestao-dropzone">
+                        <div class="ingestao-dropzone-icon">&#8679;</div>
+                        <p class="ingestao-dropzone-label">
+                            Arraste ficheiros ZIP para aqui ou
+                            <label for="ingestao-file-input" class="ingestao-browse-link">seleccione do disco</label>
+                        </p>
+                        <p class="ingestao-dropzone-hint">
+                            Formato: <code>curva_pbc_uof_YYYYMM.zip</code> &nbsp;·&nbsp; Máx. 512 MB por ficheiro
+                        </p>
+                        <input type="file" id="ingestao-file-input" accept=".zip" multiple style="display:none">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload Queue -->
+            <div id="ingestao-queue-card" class="card mb-3" style="display:none">
+                <div class="card-header">
+                    <h2>Fila de Upload</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="IngestaoTab.clearQueue()">Limpar</button>
+                </div>
+                <div id="ingestao-queue-list" class="ingestao-queue-list"></div>
+            </div>
+
+            <!-- Files already on disk -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Ficheiros em /data/bids</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="IngestaoTab.loadFiles()">Actualizar</button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Ficheiro</th>
+                                <th style="width:120px">Mês</th>
+                                <th style="width:130px;text-align:right">Tamanho</th>
+                                <th style="width:180px">Modificado em</th>
+                                <th style="width:80px;text-align:right">Acções</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ingestao-files-tbody">
+                            <tr>
+                                <td colspan="5" class="loading">
+                                    <span class="spinner"></span> A carregar...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div><!-- /#tab-ingestao -->
+
     </main>
 
     <!-- Toast notification container -->
