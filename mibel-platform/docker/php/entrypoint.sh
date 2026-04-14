@@ -13,6 +13,21 @@ else
     echo "[entrypoint] AVISO: Docker socket não encontrado em /var/run/docker.sock"
 fi
 
+# ── Aguardar ClickHouse ficar disponível (máx 60s) ────────────────────────────
+echo "[entrypoint] A aguardar ClickHouse..."
+TRIES=0
+until php -r "exit(@file_get_contents('http://clickhouse:8123/ping')==='Ok.'?0:1);" 2>/dev/null; do
+    TRIES=$((TRIES + 1))
+    if [ "$TRIES" -ge 30 ]; then
+        echo "[entrypoint] AVISO: ClickHouse não respondeu após 60s — a continuar sem ele"
+        break
+    fi
+    echo "[entrypoint] ClickHouse não disponível, nova tentativa em 2s... ($TRIES/30)"
+    sleep 2
+done
+[ "$TRIES" -lt 30 ] && echo "[entrypoint] ClickHouse disponível (tentativa $TRIES)"
+
+# ── Executar migração ──────────────────────────────────────────────────────────
 echo "[entrypoint] A executar migrate.php..."
 php /app/src/migrate.php || true
 
