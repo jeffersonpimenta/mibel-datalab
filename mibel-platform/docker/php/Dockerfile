@@ -39,6 +39,9 @@ WORKDIR /var/www/html
 # Set Composer to ignore memory limits during install if it's still crashing
 RUN COMPOSER_MEMORY_LIMIT=-1 composer require phpoffice/phpspreadsheet:^2.0 --no-interaction --prefer-dist
 
+# Docker CLI (client only) — necessário para PHP lançar workers via docker exec
+COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

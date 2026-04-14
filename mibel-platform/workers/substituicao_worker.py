@@ -1,406 +1,867 @@
 #!/usr/bin/env python3
 """
-MIBEL Platform - Substitution Worker
+MIBEL Platform — Substituição Worker
+=====================================
+Implementa exactamente a lógica do script
+clearing_substituicao_multithread - C1.py, adaptada para a plataforma:
+  • Configuração lida de /data/config/parametros.json e classificacao/excecoes
+  • Resultados inseridos no ClickHouse (clearing_substituicao + _logs)
+  • Logging compreensivo para stdout e para a tabela worker_logs
 
-Processes OMIE bid files and calculates clearing prices with PRE substitution.
-Results are stored in ClickHouse tables.
+Fluxo de processamento
+──────────────────────
+  1. Carrega escalões (parametros.json) e mapa de unidades
+     (classificacao.json + excecoes.json)
+  2. Descobre ZIPs em /data/bids/ no intervalo de datas solicitado
+  3. Para cada ZIP (paralelo nível-1):
+       Para cada CSV interno (paralelo nível-2):
+         Lê DataFrame, constrói mapa de unidades para o ficheiro
+         Para cada (Hora, Pais) (paralelo nível-3):
+           a. Clearing ORIGINAL com clearing() de clearing.py
+           b. aplica_escalao(): escala de volume + escalões de preço por bid
+           c. Clearing COM SUBSTITUIÇÃO
+           d. Grava resultado + log de substituições
+  4. Insere em lote no ClickHouse
+  5. Emite [STATUS] DONE ou [STATUS] FAILED
 
-Usage:
-    python substituicao_worker.py --job_id JOB_ID --data_inicio YYYY-MM-DD --data_fim YYYY-MM-DD [--workers N]
+Uso:
+    python substituicao_worker.py \\
+        --job_id  <UUID> \\
+        --data_inicio YYYY-MM-DD \\
+        --data_fim    YYYY-MM-DD \\
+        [--workers N]
 """
 
 import argparse
 import os
+import re
 import sys
-import zipfile
-import io
+import threading
 import traceback
-from datetime import datetime, date
+import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime
+from io import StringIO
 from typing import Optional
 
 import pandas as pd
-import numpy as np
 
-# Add workers directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# ── Paths ─────────────────────────────────────────────────────────────────────
+sys.path.insert(0, '/scripts')                              # clearing.py
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # utils.py
 
+from clearing import clearing  # algoritmo real (pointer + degrau handling)
 from utils import (
-    get_ch, ch_insert_batch, log,
-    carrega_escaloes, carrega_mapa_unidades,
+    get_ch, ch_insert_batch,
+    carrega_escaloes, carrega_classificacao, carrega_excecoes,
     zip_files_no_intervalo, extrai_data, normaliza_hora,
-    get_categoria_zona, sufixo_de_pais, ensure_output_dir,
-    calcula_clearing, aplica_substituicao_pre
+    sufixo_de_pais, ensure_output_dir,
 )
 
-# ============================================================================
-# Constants
-# ============================================================================
+# ══════════════════════════════════════════════════════════════════════════════
+#  LOGGING THREAD-SAFE
+# ══════════════════════════════════════════════════════════════════════════════
 
-COLUMNS_BID = [
-    'Hora', 'Fecha', 'Pais', 'Unidad', 'Tipo Oferta', 'Energia',
-    'Precio', 'Ofertada', 'Casada', 'Tecnologia'
-]
+_print_lock = threading.Lock()
 
-# ============================================================================
-# Bid File Processing
-# ============================================================================
 
-def le_ficheiro_zip(zip_path: str) -> Optional[pd.DataFrame]:
+def log(nivel: str, mensagem: str, job_id: str = '', ch=None) -> None:
     """
-    Read bid data from OMIE ZIP file.
+    Escreve linha de log no stdout (thread-safe) e, opcionalmente,
+    insere na tabela worker_logs do ClickHouse.
 
-    Expected structure: ZIP contains one or more .1 files with semicolon-separated data.
+    Níveis usados: INFO, OK, AVISO, ERRO, CSV, ZIP, STATUS
+    A última linha com [STATUS] DONE ou [STATUS] FAILED é detectada pelo PHP
+    para actualizar o estado do job.
     """
-    try:
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            # Find the bid file (usually .1 extension)
-            bid_files = [f for f in zf.namelist() if f.endswith('.1') or f.endswith('.txt')]
+    ts   = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    line = f'[{ts}] [{nivel}] {mensagem}'
+    with _print_lock:
+        print(line, flush=True)
 
-            if not bid_files:
-                return None
-
-            dfs = []
-            for fname in bid_files:
-                with zf.open(fname) as f:
-                    content = f.read().decode('latin-1')
-
-                # Parse semicolon-separated data
-                lines = content.strip().split('\n')
-                data = []
-
-                for line in lines:
-                    parts = line.split(';')
-                    if len(parts) >= 10:
-                        try:
-                            row = {
-                                'Hora': parts[0].strip(),
-                                'Fecha': parts[1].strip(),
-                                'Pais': parts[2].strip(),
-                                'Unidad': parts[3].strip(),
-                                'Tipo Oferta': parts[4].strip(),
-                                'Energia': float(parts[5].replace(',', '.')) if parts[5].strip() else 0,
-                                'Precio': float(parts[6].replace(',', '.')) if parts[6].strip() else 0,
-                                'Ofertada': float(parts[7].replace(',', '.')) if parts[7].strip() else 0,
-                                'Casada': float(parts[8].replace(',', '.')) if parts[8].strip() else 0,
-                                'Tecnologia': parts[9].strip() if len(parts) > 9 else ''
-                            }
-                            data.append(row)
-                        except (ValueError, IndexError):
-                            continue
-
-                if data:
-                    dfs.append(pd.DataFrame(data))
-
-            if dfs:
-                return pd.concat(dfs, ignore_index=True)
-
-    except Exception as e:
-        print(f'Error reading ZIP {zip_path}: {e}', flush=True)
-
-    return None
+    if ch and job_id:
+        try:
+            ch.execute(
+                'INSERT INTO mibel.worker_logs (job_id, nivel, mensagem) VALUES',
+                [{'job_id': job_id, 'nivel': nivel, 'mensagem': mensagem}]
+            )
+        except Exception:
+            pass  # falha silenciosa — o log em stdout é suficiente
 
 
-def processa_hora(
-    df_hora: pd.DataFrame,
-    hora_raw: str,
-    hora_num: int,
-    periodo_fmt: str,
-    pais_filter: str,
-    mapa: dict,
-    escaloes: dict,
-    job_id: str
-) -> tuple:
+# ══════════════════════════════════════════════════════════════════════════════
+#  MAPEAMENTO DE COLUNAS DOS FICHEIROS DE BIDS
+# ══════════════════════════════════════════════════════════════════════════════
+
+MAPA_COLUNAS: dict[str, str] = {
+    # Energia
+    'Energía Compra/Venta': 'Energia',
+    'Energia Compra/Venta': 'Energia',
+    'Potencia Compra/Venta': 'Energia',
+    'Potencia':              'Energia',
+    'Energia':               'Energia',
+    # Preço
+    'Precio Compra/Venta':   'Precio',
+    'Precio':                'Precio',
+    # Hora
+    'Hora':                  'Hora',
+    'Periodo':               'Hora',
+    # País
+    'Pais':                  'Pais',
+    'País':                  'Pais',
+    # Tipo oferta e unidade
+    'Tipo Oferta':           'Tipo Oferta',
+    'Unidad':                'Unidad',
+    # Tecnologia / Tipo de unidade (usado para classificação)
+    'Tipo Unidad':           'TIPO_UNIDAD',
+    'TipoUnidad':            'TIPO_UNIDAD',
+    'Tecnología':            'TIPO_UNIDAD',
+    'Tecnologia':            'TIPO_UNIDAD',
+}
+
+COLUNAS_OBRIGATORIAS = ('Hora', 'Pais', 'Tipo Oferta', 'Unidad', 'Energia', 'Precio')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  CONSTRUÇÃO DO MAPA DE UNIDADES (CODIGO → (regime, categoria_zona))
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_mapa_unidades(
+    df: pd.DataFrame,
+    mapa_tec: dict,   # tecnologia_str → (regime, categoria_base)
+    excecoes: dict,   # CODIGO_UPPER → categoria_zona  (já com sufixo _ES/_PT)
+    escaloes: dict,   # ESCALOES completo (para validação)
+) -> dict:
     """
-    Process bids for a single hour and country.
+    Constrói {CODIGO_upper → (regime, categoria_zona)} a partir do DataFrame
+    de bids lido do ficheiro e da configuração da plataforma.
 
-    Returns:
-        (resultado_dict, logs_list)
+    Prioridade de classificação:
+      1. Excepção por código de unidade (maior precedência, inclui sufixo)
+      2. Mapeamento por TIPO_UNIDAD + sufixo do país (MI→_ES, PT→_PT)
+      3. Unidade não classificada → excluída do mapa
+
+    O resultado é um dicionário plano idêntico ao produzido por
+    carrega_unidades() no script original.
     """
-    # Separate buy and sell offers
-    df_compra = df_hora[df_hora['Tipo Oferta'] == 'C'].copy()
-    df_venda = df_hora[df_hora['Tipo Oferta'] == 'V'].copy()
+    mapa: dict = {}
+    has_tipo = 'TIPO_UNIDAD' in df.columns
 
-    # Calculate original clearing
-    ofertas_compra_orig = list(zip(df_compra['Precio'], df_compra['Energia']))
-    ofertas_venda_orig = list(zip(df_venda['Precio'], df_venda['Energia']))
+    unidades_uniq = (
+        df[['Unidad', 'Pais'] + (['TIPO_UNIDAD'] if has_tipo else [])]
+        .drop_duplicates()
+        .itertuples(index=False)
+    )
 
-    preco_orig, volume_orig = calcula_clearing(ofertas_compra_orig, ofertas_venda_orig)
+    for row in unidades_uniq:
+        unidade = str(row.Unidad).strip().upper()
+        pais    = str(row.Pais).strip()
+        tipo    = str(getattr(row, 'TIPO_UNIDAD', '')).strip() if has_tipo else ''
 
-    # Apply PRE substitution to sell offers
-    bids_venda_mod = []
-    bids_venda_outros = []
-    logs_substituicao = []
-    n_bids_substituidos = 0
-
-    for _, row in df_venda.iterrows():
-        unidade = row['Unidad']
-        tecnologia = row.get('Tecnologia', '')
-        pais = row['Pais']
-
-        regime, cat_zona = get_categoria_zona(unidade, tecnologia, pais, mapa, escaloes)
-
-        if regime == 'PRE' and cat_zona in escaloes.get('PRE', {}):
-            # This is a PRE unit - apply substitution
-            config_cat = escaloes['PRE'][cat_zona]
-
-            bid_orig = {
-                'unidade': unidade,
-                'energia': row['Energia'],
-                'precio': row['Precio'],
-                'categoria': cat_zona,
-                'tipo_oferta': 'V'
-            }
-
-            # Apply substitution
-            bids_mod, logs = aplica_substituicao_pre([bid_orig], cat_zona, config_cat)
-            bids_venda_mod.extend(bids_mod)
-
-            for log_entry in logs:
-                log_entry.update({
-                    'unidade': unidade,
-                    'preco_original': row['Precio'],
-                    'energia_mw': row['Energia']
-                })
-                logs_substituicao.append(log_entry)
-
-            n_bids_substituidos += 1
-        else:
-            # Non-PRE or unclassified - keep original
-            bids_venda_outros.append({
-                'unidade': unidade,
-                'energia': row['Energia'],
-                'precio': row['Precio'],
-                'categoria': cat_zona,
-                'tipo_oferta': 'V'
-            })
-
-    # Calculate new clearing with substituted bids
-    ofertas_venda_sub = [(b['precio'], b['energia']) for b in bids_venda_mod + bids_venda_outros]
-    preco_sub, volume_sub = calcula_clearing(ofertas_compra_orig, ofertas_venda_sub)
-
-    # Calculate delta
-    delta_preco = None
-    if preco_orig is not None and preco_sub is not None:
-        delta_preco = preco_sub - preco_orig
-
-    resultado = {
-        'hora_raw': hora_raw,
-        'hora_num': hora_num,
-        'pais': pais_filter,
-        'preco_clearing_orig': preco_orig,
-        'volume_clearing_orig': volume_orig,
-        'preco_clearing_sub': preco_sub,
-        'volume_clearing_sub': volume_sub,
-        'delta_preco': delta_preco,
-        'n_bids_substituidos': n_bids_substituidos
-    }
-
-    return resultado, logs_substituicao
-
-
-def processa_ficheiro(
-    zip_path: str,
-    mapa: dict,
-    escaloes: dict,
-    job_id: str,
-    ch=None
-) -> tuple:
-    """
-    Process a single ZIP file.
-
-    Returns:
-        (resultados_list, logs_list, nome_ficheiro)
-    """
-    nome_zip = os.path.basename(zip_path)
-    data_ficheiro = extrai_data(nome_zip)
-
-    df = le_ficheiro_zip(zip_path)
-    if df is None or df.empty:
-        log('AVISO', f'{nome_zip} | Ficheiro vazio ou inválido', job_id, ch)
-        return [], [], nome_zip
-
-    resultados = []
-    logs_total = []
-
-    # Process each country
-    for pais in ['ES', 'PT']:
-        df_pais = df[df['Pais'] == pais]
-        if df_pais.empty:
+        # 1. Excepção por código
+        if unidade in excecoes:
+            cat_zona = excecoes[unidade]
+            regime_found = 'NAO_CLASSIFICADO'
+            for regime_key, cats in escaloes.items():
+                if isinstance(cats, dict) and cat_zona in cats:
+                    regime_found = regime_key
+                    break
+            mapa[unidade] = (regime_found, cat_zona)
             continue
 
-        # Process each hour
-        for hora_val in df_pais['Hora'].unique():
-            df_hora = df_pais[df_pais['Hora'] == hora_val]
-            hora_raw, hora_num, periodo_fmt = normaliza_hora(hora_val)
+        # 2. Por tecnologia
+        if tipo and tipo in mapa_tec:
+            regime, cat_base = mapa_tec[tipo]
+            sufixo   = sufixo_de_pais(pais)
+            cat_zona = cat_base + sufixo
 
-            try:
-                resultado, logs = processa_hora(
-                    df_hora, hora_raw, hora_num, periodo_fmt,
-                    pais, mapa, escaloes, job_id
-                )
+            if regime in escaloes and isinstance(escaloes[regime], dict):
+                if cat_zona in escaloes[regime]:
+                    mapa[unidade] = (regime, cat_zona)
+                    continue
+                # fallback: sem sufixo (categorias como COMERC_EXT)
+                if cat_base in escaloes[regime]:
+                    mapa[unidade] = (regime, cat_base)
+                    continue
 
-                resultado['job_id'] = job_id
-                resultado['data_ficheiro'] = data_ficheiro
-                resultado['data_date'] = data_ficheiro
+    return mapa
 
-                resultados.append(resultado)
 
-                for log_entry in logs:
-                    log_entry.update({
-                        'job_id': job_id,
-                        'data_ficheiro': data_ficheiro,
-                        'data_date': data_ficheiro,
-                        'hora_raw': hora_raw,
-                        'hora_num': hora_num,
-                        'pais': pais
+# ══════════════════════════════════════════════════════════════════════════════
+#  VOLUMES DIÁRIOS (suporte a perfil_hora)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def calcula_volumes_diarios(
+    df: pd.DataFrame,
+    mapa_unidades: dict,
+    escaloes: dict,
+) -> dict:
+    """
+    Pré-calcula {(classe, categoria): {hora_int: volume_orig}} para
+    categorias que tenham "perfil_hora" definido.
+    Necessário para normalizar o factor horário sem alterar o volume total diário.
+    """
+    volumes: dict = {}
+    unidades_upper = df['Unidad'].astype(str).str.strip().str.upper()
+
+    for classe, cats_dict in escaloes.items():
+        for categoria, cfg in cats_dict.items():
+            if 'perfil_hora' not in cfg:
+                continue
+
+            codigos = {
+                cod for cod, (reg, cat) in mapa_unidades.items()
+                if reg == classe and cat == categoria
+            }
+            if not codigos:
+                continue
+
+            mask = unidades_upper.isin(codigos)
+            if not mask.any():
+                continue
+
+            df_cat = df[mask].copy()
+            df_cat['_h'] = pd.to_numeric(df_cat['Hora'], errors='coerce')
+            volumes[(classe, categoria)] = (
+                df_cat.groupby('_h')['Energia'].sum().to_dict()
+            )
+
+    return volumes
+
+
+def calcula_factor_horario(
+    hora,
+    cfg: dict,
+    volumes_diarios: dict,
+    classe: str,
+    categoria: str,
+) -> float:
+    """Factor efectivo para a hora actual, garantindo escala total diária."""
+    perfil = cfg['perfil_hora']
+    escala = cfg.get('escala', 1.0)
+
+    try:
+        hora_int = int(hora)
+    except (ValueError, TypeError):
+        return escala
+
+    vol_hora = volumes_diarios.get((classe, categoria), {})
+    if not vol_hora:
+        return escala
+
+    soma_pond = sum(vol_hora.get(h, 0.0) * perfil.get(h, 1.0) for h in vol_hora)
+    if soma_pond == 0:
+        return escala
+
+    k = sum(vol_hora.values()) * escala / soma_pond
+    return perfil.get(hora_int, 1.0) * k
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  APLICAÇÃO DE ESCALA + ESCALÕES  (idêntico ao script C1 original)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def aplica_escalao(
+    df: pd.DataFrame,
+    mapa_unidades: dict,
+    escaloes: dict,
+    Hora: str = '',
+    pais: str = '',
+    internal_file: str = '',
+    volumes_diarios: Optional[dict] = None,
+) -> tuple[pd.DataFrame, list]:
+    """
+    Aplica para TODAS as classes (PRE, PRO, CONSUMO, COMERCIALIZADOR, …):
+
+      • "escala"      — multiplica Energia de cada bid pelo factor.
+      • "perfil_hora" — factor horário não uniforme (requer volumes_diarios).
+      • "escaloes"    — (PRE) substitui Precio≈0 pelos preços dos escalões,
+                        distribuindo volume acumulado pelos limiares definidos.
+      • "delta_preco" — adiciona offset a todos os Precios da categoria.
+
+    Devolve (df_modificado, lista_de_logs_de_substituição).
+    """
+    df   = df.copy()
+    logs = []
+
+    unidades_upper = df['Unidad'].astype(str).str.strip().str.upper()
+
+    for classe, cats_dict in escaloes.items():
+        for categoria, cfg in cats_dict.items():
+
+            codigos = {
+                cod for cod, (reg, cat) in mapa_unidades.items()
+                if reg == classe and cat == categoria
+            }
+            if not codigos:
+                continue
+
+            mask_cat = unidades_upper.isin(codigos)
+            if not mask_cat.any():
+                continue
+
+            # ── 1. Escala de volume ──────────────────────────────────────────
+            if 'escala' in cfg:
+                if 'perfil_hora' in cfg and volumes_diarios is not None:
+                    factor = calcula_factor_horario(Hora, cfg, volumes_diarios, classe, categoria)
+                else:
+                    factor = cfg['escala']
+
+                if factor != 1.0:
+                    df.loc[mask_cat, 'Energia'] = (
+                        df.loc[mask_cat, 'Energia'] * factor
+                    )
+                    # Recalcular máscara pois Energia mudou (mas Unidad não)
+                    unidades_upper = df['Unidad'].astype(str).str.strip().str.upper()
+
+            # ── 2. Escalões de preço (bids com Precio ≈ 0) ──────────────────
+            if 'escaloes' in cfg:
+                escalonamento = cfg['escaloes']
+
+                mask_zero = mask_cat & df['Precio'].between(-0.001, 0.001)
+                df_zero   = df[mask_zero]
+                if df_zero.empty:
+                    continue
+
+                vol_total = df_zero['Energia'].sum()
+                vol_acum  = 0.0
+                esc_idx   = 0
+
+                # Limiares de volume acumulado por escalão
+                limiares: list[float] = []
+                acum = 0.0
+                for esc in escalonamento[:-1]:
+                    acum += esc['pct_bids'] * vol_total
+                    limiares.append(acum)
+                limiares.append(float('inf'))
+
+                for idx in df_zero.index:
+                    energia_bid = df.at[idx, 'Energia']
+                    vol_acum   += energia_bid
+
+                    while (esc_idx < len(limiares) - 1
+                           and vol_acum > limiares[esc_idx] + 1e-9):
+                        esc_idx += 1
+
+                    preco_novo = escalonamento[esc_idx]['preco']
+                    if preco_novo == 0:
+                        continue  # escalão a 0 → não modifica
+
+                    preco_orig           = df.at[idx, 'Precio']
+                    df.at[idx, 'Precio'] = preco_novo
+
+                    logs.append({
+                        'internal_file': internal_file,
+                        'Hora':          Hora,
+                        'pais':          pais,
+                        'Unidad':        df.at[idx, 'Unidad'],
+                        'classe':        classe,
+                        'categoria':     categoria,
+                        'escalao_preco': preco_novo,
+                        'preco_original': preco_orig,
+                        'Energia_MW':    energia_bid,
                     })
-                    logs_total.append(log_entry)
 
+            # ── 3. Delta de preço ────────────────────────────────────────────
+            if 'delta_preco' in cfg:
+                delta = cfg['delta_preco']
+                if delta != 0.0:
+                    df.loc[mask_cat, 'Precio'] = (
+                        df.loc[mask_cat, 'Precio'] + delta
+                    )
+
+    return df, logs
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  NÍVEL 3 — PROCESSAMENTO POR (Hora, Pais)  [função pura, thread-safe]
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _processa_hora_pais(
+    df: pd.DataFrame,
+    internal_file: str,
+    Hora: str,
+    pais: str,
+    mapa_unidades: dict,
+    escaloes: dict,
+    volumes_diarios: dict,
+) -> tuple:
+    """
+    Calcula clearing original + clearing com substituição para um único
+    par (Hora, Pais). Função pura e thread-safe.
+
+    Devolve (row_dict | None, lista_de_logs).
+    """
+    compras = df[
+        (df['Hora'] == Hora) & (df['Tipo Oferta'] == 'C') & (df['Pais'] == pais)
+    ].copy()
+    vendas = df[
+        (df['Hora'] == Hora) & (df['Tipo Oferta'] == 'V') & (df['Pais'] == pais)
+    ].copy()
+
+    if compras.empty or vendas.empty:
+        return None, []
+
+    # ── Clearing ORIGINAL ────────────────────────────────────────────────────
+    compras_o = compras.sort_values('Precio', ascending=False).reset_index(drop=True)
+    vendas_o  = vendas.sort_values( 'Precio', ascending=True ).reset_index(drop=True)
+    compras_o['Volume_Acumulado'] = compras_o['Energia'].cumsum()
+    vendas_o ['Volume_Acumulado'] = vendas_o ['Energia'].cumsum()
+
+    preco_orig, volume_orig = clearing(compras_df=compras_o, vendas_df=vendas_o)
+
+    # ── Aplicar escala + escalões ────────────────────────────────────────────
+    compras_mod, _ = aplica_escalao(
+        compras, mapa_unidades, escaloes,
+        Hora=Hora, volumes_diarios=volumes_diarios,
+    )
+    vendas_mod, logs_sub = aplica_escalao(
+        vendas, mapa_unidades, escaloes,
+        Hora=Hora, pais=pais, internal_file=internal_file,
+        volumes_diarios=volumes_diarios,
+    )
+
+    # ── Clearing COM SUBSTITUIÇÃO ────────────────────────────────────────────
+    compras_s = compras_mod.sort_values('Precio', ascending=False).reset_index(drop=True)
+    vendas_s  = vendas_mod.sort_values( 'Precio', ascending=True ).reset_index(drop=True)
+    compras_s['Volume_Acumulado'] = compras_s['Energia'].cumsum()
+    vendas_s ['Volume_Acumulado'] = vendas_s ['Energia'].cumsum()
+
+    preco_sub, volume_sub = clearing(compras_df=compras_s, vendas_df=vendas_s)
+
+    delta = (
+        (preco_sub - preco_orig)
+        if preco_sub is not None and preco_orig is not None
+        else None
+    )
+
+    row = {
+        'Hora':                  Hora,
+        'pais':                  pais,
+        'internal_file':         internal_file,
+        'preco_clearing_orig':   preco_orig,
+        'volume_clearing_orig':  volume_orig,
+        'preco_clearing_sub':    preco_sub,
+        'volume_clearing_sub':   volume_sub,
+        'delta_preco':           delta,
+        'n_bids_substituidos':   len(logs_sub),
+    }
+    return row, logs_sub
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  NÍVEL 2 — PROCESSAMENTO DE UM FICHEIRO CSV INTERNO AO ZIP
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _processa_internal_file(
+    zip_path: str,
+    internal_file: str,
+    mapa_tec: dict,
+    excecoes: dict,
+    escaloes: dict,
+    workers_hora_pais: int,
+    job_id: str,
+    ch,
+) -> tuple[list, list]:
+    """
+    Nível 2 — lê um CSV de dentro do ZIP, constrói o mapa de unidades
+    específico para esse ficheiro, e paraleliza o clearing por (Hora, Pais).
+
+    Devolve (rows, logs) onde:
+      rows — lista de dicts prontos para inserção em clearing_substituicao
+      logs — lista de dicts para clearing_substituicao_logs
+    """
+    zip_nome = os.path.basename(zip_path)
+    log('CSV', f'{zip_nome} → {internal_file}', job_id, ch)
+
+    # ── Leitura do CSV ───────────────────────────────────────────────────────
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as z:
+            with z.open(internal_file) as f:
+                content = f.read().decode('latin-1')
+
+        df = pd.read_csv(StringIO(content), sep=';', dtype=str, skiprows=2)
+        df.columns = [c.strip() for c in df.columns]
+        df = df.rename(columns=MAPA_COLUNAS)
+        df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')
+
+    except Exception as e:
+        log('ERRO', f'{internal_file}: falha na leitura — {e}', job_id, ch)
+        return [], []
+
+    # Verificar colunas obrigatórias
+    faltam = [c for c in COLUNAS_OBRIGATORIAS if c not in df.columns]
+    if faltam:
+        log('AVISO', f'{internal_file}: colunas em falta {faltam} — ignorado', job_id, ch)
+        return [], []
+
+    # Converter Energia e Precio (formato ibérico: ponto=milhar, vírgula=decimal)
+    for col in ('Energia', 'Precio'):
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.replace('.', '', regex=False)
+            .str.replace(',', '.', regex=False)
+            .apply(pd.to_numeric, errors='coerce')
+            .fillna(0.0)
+        )
+
+    n_rows  = len(df)
+    n_units = df['Unidad'].nunique()
+    paises  = sorted(df['Pais'].unique().tolist())
+    horas   = sorted(df['Hora'].unique().tolist())
+    log('INFO',
+        f'{internal_file}: {n_rows} bids | {n_units} unidades | '
+        f'países={paises} | horas {horas[0]}–{horas[-1]}',
+        job_id, ch)
+
+    # ── Construção do mapa de unidades ──────────────────────────────────────
+    mapa_unidades = build_mapa_unidades(df, mapa_tec, excecoes, escaloes)
+
+    contagem_regime: dict[str, int] = {}
+    for reg, _ in mapa_unidades.values():
+        contagem_regime[reg] = contagem_regime.get(reg, 0) + 1
+
+    resumo_reg = '  '.join(f'{r}={n}' for r, n in sorted(contagem_regime.items()))
+    log('INFO',
+        f'{internal_file}: {len(mapa_unidades)} unidades classificadas  |  {resumo_reg}',
+        job_id, ch)
+
+    n_sem = n_units - len(mapa_unidades)
+    if n_sem:
+        log('AVISO', f'{internal_file}: {n_sem} unidades sem classificação (serão ignoradas)', job_id, ch)
+
+    # ── Volumes diários (para perfil_hora) ──────────────────────────────────
+    volumes_diarios = calcula_volumes_diarios(df, mapa_unidades, escaloes)
+
+    # ── Combinações (Hora, Pais) ─────────────────────────────────────────────
+    combinacoes = [
+        (h, p)
+        for h in sorted(df['Hora'].unique())
+        for p in sorted(df[df['Hora'] == h]['Pais'].unique())
+    ]
+    log('INFO', f'{internal_file}: {len(combinacoes)} combinações (Hora × País)', job_id, ch)
+
+    rows: list = []
+    logs: list = []
+
+    # ── Paralelismo nível-3 ──────────────────────────────────────────────────
+    with ThreadPoolExecutor(max_workers=workers_hora_pais) as ex:
+        futures = {
+            ex.submit(
+                _processa_hora_pais,
+                df, internal_file, h, p,
+                mapa_unidades, escaloes, volumes_diarios,
+            ): (h, p)
+            for h, p in combinacoes
+        }
+        for fut in as_completed(futures):
+            h, p = futures[fut]
+            try:
+                row, log_este = fut.result()
+                if row is not None:
+                    rows.append(row)
+                    # Log por período com delta %
+                    po = row['preco_clearing_orig']
+                    ps = row['preco_clearing_sub']
+                    delta = row['delta_preco']
+                    if po and ps:
+                        pct = ((ps / po) - 1) * 100 if po else 0
+                        log('OK',
+                            f'{internal_file}|H{h}|{p} '
+                            f'orig={po:.4f} sub={ps:.4f} '
+                            f'Δ={delta:+.4f} ({pct:+.2f}%) '
+                            f'bids_sub={row["n_bids_substituidos"]}',
+                            job_id)
+                    else:
+                        log('OK',
+                            f'{internal_file}|H{h}|{p} orig={po} sub={ps}',
+                            job_id)
+                logs.extend(log_este)
             except Exception as e:
-                log('ERRO', f'{nome_zip} | Hora {hora_val} Pais {pais}: {e}', job_id, ch)
+                log('ERRO', f'{internal_file}|H{h}|{p}: {e}', job_id, ch)
 
-    n_periodos = len(resultados)
-    if resultados:
-        p_orig_avg = np.mean([r['preco_clearing_orig'] for r in resultados if r['preco_clearing_orig'] is not None])
-        p_sub_avg = np.mean([r['preco_clearing_sub'] for r in resultados if r['preco_clearing_sub'] is not None])
-        log('OK', f'{nome_zip} | {n_periodos} períodos | orig={p_orig_avg:.2f} sub={p_sub_avg:.2f}', job_id, ch)
+    # Resumo do ficheiro
+    if rows:
+        precos_o = [r['preco_clearing_orig'] for r in rows if r['preco_clearing_orig'] is not None]
+        precos_s = [r['preco_clearing_sub']  for r in rows if r['preco_clearing_sub']  is not None]
+        deltas   = [r['delta_preco']         for r in rows if r['delta_preco']         is not None]
+        avg_o    = sum(precos_o) / len(precos_o) if precos_o else None
+        avg_s    = sum(precos_s) / len(precos_s) if precos_s else None
+        avg_d    = sum(deltas)   / len(deltas)   if deltas   else None
+        log('INFO',
+            f'{internal_file}: concluído — '
+            f'{len(rows)} períodos | {sum(r["n_bids_substituidos"] for r in rows)} bids sub. | '
+            f'avg_orig={avg_o:.4f} avg_sub={avg_s:.4f} avg_Δ={avg_d:+.4f}',
+            job_id, ch)
+    else:
+        log('AVISO', f'{internal_file}: sem resultados de clearing', job_id, ch)
 
-    return resultados, logs_total, nome_zip
+    return rows, logs
 
-# ============================================================================
-# Main Worker Logic
-# ============================================================================
 
-def run_worker(job_id: str, data_inicio: str, data_fim: str, n_workers: int = 4):
-    """Main worker entry point."""
+# ══════════════════════════════════════════════════════════════════════════════
+#  NÍVEL 1 — PROCESSAMENTO DE UM ZIP COMPLETO
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _processa_zip(
+    zip_path: str,
+    mapa_tec: dict,
+    excecoes: dict,
+    escaloes: dict,
+    workers_interno: int,
+    workers_hora_pais: int,
+    job_id: str,
+    ch,
+) -> tuple[list, list]:
+    """
+    Nível 1 — abre um ZIP, lista os seus ficheiros CSV internos e paraleliza
+    o processamento com um sub-pool de threads.
+
+    Devolve (rows, logs) acumulados de todos os ficheiros internos.
+    """
+    zip_nome = os.path.basename(zip_path)
+    log('ZIP', f'A abrir {zip_nome}', job_id, ch)
+
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as z:
+            internal_files = z.namelist()
+    except Exception as e:
+        log('ERRO', f'{zip_nome}: não foi possível abrir o ZIP — {e}', job_id, ch)
+        return [], []
+
+    log('INFO', f'{zip_nome}: {len(internal_files)} ficheiro(s) interno(s): {internal_files}', job_id, ch)
+
+    rows_zip: list = []
+    logs_zip: list = []
+
+    with ThreadPoolExecutor(max_workers=workers_interno) as ex:
+        futures = {
+            ex.submit(
+                _processa_internal_file,
+                zip_path, ifile,
+                mapa_tec, excecoes, escaloes,
+                workers_hora_pais, job_id, None,  # ch=None nas threads filho
+            ): ifile
+            for ifile in internal_files
+        }
+        for fut in as_completed(futures):
+            ifile = futures[fut]
+            try:
+                rows, logs = fut.result()
+                rows_zip.extend(rows)
+                logs_zip.extend(logs)
+            except Exception as e:
+                log('ERRO', f'{zip_nome}/{ifile}: {e}', job_id, ch)
+
+    log('ZIP',
+        f'{zip_nome}: concluído — '
+        f'{len(rows_zip)} períodos | {sum(r["n_bids_substituidos"] for r in rows_zip)} bids sub.',
+        job_id, ch)
+
+    return rows_zip, logs_zip
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ORQUESTRADOR PRINCIPAL
+# ══════════════════════════════════════════════════════════════════════════════
+
+def run_worker(
+    job_id: str,
+    data_inicio: str,
+    data_fim: str,
+    n_workers: int = 4,
+) -> bool:
+    """
+    Ponto de entrada principal do worker.
+
+    Arquitectura de threads:
+      workers_zip       = n_workers        (ZIPs em paralelo)
+      workers_interno   = max(1, n_workers // 2)  (ficheiros por ZIP)
+      workers_hora_pais = max(2, n_workers)        (pares hora/país)
+    """
     ch = None
 
     try:
+        ensure_output_dir()
         ch = get_ch()
-        log('INFO', f'Iniciando job {job_id}', job_id, ch)
-        log('INFO', f'Intervalo: {data_inicio} a {data_fim} | Workers: {n_workers}', job_id, ch)
 
-        # Load configuration
-        log('INFO', 'A carregar configuração...', job_id, ch)
-        escaloes = carrega_escaloes()
-        mapa = carrega_mapa_unidades()
+        log('INFO', '═' * 60, job_id, ch)
+        log('INFO', f'Job ID       : {job_id}', job_id, ch)
+        log('INFO', f'Intervalo    : {data_inicio} → {data_fim}', job_id, ch)
+        log('INFO', f'Workers      : {n_workers}', job_id, ch)
+        log('INFO', '═' * 60, job_id, ch)
 
-        n_categorias_pre = len(escaloes.get('PRE', {}))
-        n_excecoes = len(mapa.get('excecoes', {}))
-        log('INFO', f'Configuração: {n_categorias_pre} categorias PRE, {n_excecoes} excepções', job_id, ch)
+        # ── 1. Carregar configuração ─────────────────────────────────────────
+        log('INFO', 'A carregar configuração (escalões, classificação, excepções)…', job_id, ch)
+        escaloes    = carrega_escaloes()
+        classif     = carrega_classificacao()    # [{tecnologia, regime, categoria}]
+        exc_list    = carrega_excecoes()         # [{codigo, categoria_zona, motivo}]
 
-        # Find ZIP files
+        mapa_tec = {e['tecnologia']: (e['regime'], e['categoria']) for e in classif}
+        excecoes = {e['codigo'].upper(): e['categoria_zona'] for e in exc_list}
+
+        n_pre    = len(escaloes.get('PRE', {}))
+        n_outras = sum(len(v) for k, v in escaloes.items() if k != 'PRE')
+        log('INFO',
+            f'Configuração: '
+            f'{len(mapa_tec)} tecnologias | '
+            f'{len(excecoes)} excepções | '
+            f'{n_pre} categorias PRE | '
+            f'{n_outras} categorias outras classes',
+            job_id, ch)
+
+        # ── 2. Descobrir ZIPs no intervalo ───────────────────────────────────
         zip_files = zip_files_no_intervalo(data_inicio, data_fim)
         if not zip_files:
-            log('AVISO', 'Nenhum ficheiro ZIP encontrado no intervalo', job_id, ch)
+            log('AVISO', f'Nenhum ficheiro ZIP encontrado em /data/bids/ '
+                         f'no intervalo {data_inicio} → {data_fim}', job_id, ch)
             log('STATUS', 'DONE', job_id, ch)
             return True
 
-        log('INFO', f'Encontrados {len(zip_files)} ficheiros ZIP', job_id, ch)
+        log('INFO', f'Encontrados {len(zip_files)} ficheiro(s) ZIP:', job_id, ch)
+        for zp in zip_files:
+            log('INFO', f'  • {os.path.basename(zp)}', job_id, ch)
 
-        # Process files
-        all_resultados = []
-        all_logs = []
-        errors = []
+        # ── 3. Processar todos os ZIPs ────────────────────────────────────────
+        workers_zip       = n_workers
+        workers_interno   = max(1, n_workers // 2)
+        workers_hora_pais = max(2, n_workers)
 
-        if n_workers <= 1:
-            # Sequential processing
-            for zip_path in zip_files:
+        log('INFO',
+            f'Paralelismo: ZIP={workers_zip} | interno={workers_interno} | hora/país={workers_hora_pais}',
+            job_id, ch)
+
+        all_rows: list = []
+        all_logs: list = []
+        erros: list    = []
+
+        with ThreadPoolExecutor(max_workers=workers_zip) as ex:
+            futures = {
+                ex.submit(
+                    _processa_zip,
+                    zp, mapa_tec, excecoes, escaloes,
+                    workers_interno, workers_hora_pais,
+                    job_id, None,  # ch=None nas threads filho
+                ): zp
+                for zp in zip_files
+            }
+            concluidos = 0
+            for fut in as_completed(futures):
+                zp = futures[fut]
+                concluidos += 1
                 try:
-                    resultados, logs, nome = processa_ficheiro(
-                        zip_path, mapa, escaloes, job_id, ch
-                    )
-                    all_resultados.extend(resultados)
+                    rows, logs = fut.result()
+                    all_rows.extend(rows)
                     all_logs.extend(logs)
+                    log('INFO',
+                        f'[{concluidos}/{len(zip_files)}] {os.path.basename(zp)} processado — '
+                        f'{len(rows)} períodos acumulados até agora: {len(all_rows)}',
+                        job_id, ch)
                 except Exception as e:
-                    errors.append(f'{os.path.basename(zip_path)}: {e}')
-                    log('ERRO', f'Erro processando {os.path.basename(zip_path)}: {e}', job_id, ch)
-        else:
-            # Parallel processing
-            with ThreadPoolExecutor(max_workers=n_workers) as executor:
-                futures = {
-                    executor.submit(processa_ficheiro, zp, mapa, escaloes, job_id, None): zp
-                    for zp in zip_files
-                }
+                    nome = os.path.basename(zp)
+                    erros.append(nome)
+                    log('ERRO', f'{nome}: {e}', job_id, ch)
 
-                for future in as_completed(futures):
-                    zip_path = futures[future]
-                    try:
-                        resultados, logs, nome = future.result()
-                        all_resultados.extend(resultados)
-                        all_logs.extend(logs)
+        # ── 4. Inserir resultados no ClickHouse ──────────────────────────────
+        log('INFO', '─' * 60, job_id, ch)
+        log('INFO', f'Total: {len(all_rows)} períodos | {len(all_logs)} substituições de preço',
+            job_id, ch)
 
-                        # Log progress (after file completes)
-                        if resultados:
-                            p_orig = np.mean([r['preco_clearing_orig'] for r in resultados if r['preco_clearing_orig']])
-                            p_sub = np.mean([r['preco_clearing_sub'] for r in resultados if r['preco_clearing_sub']])
-                            log('OK', f'{nome} | {len(resultados)} períodos | orig={p_orig:.2f} sub={p_sub:.2f}', job_id, ch)
+        if all_rows:
+            log('INFO', f'A inserir {len(all_rows)} linhas em clearing_substituicao…', job_id, ch)
 
-                    except Exception as e:
-                        nome = os.path.basename(zip_path)
-                        errors.append(f'{nome}: {e}')
-                        log('ERRO', f'Erro processando {nome}: {e}', job_id, ch)
+            rows_ch = []
+            for r in all_rows:
+                hora_raw, hora_num, _ = normaliza_hora(r['Hora'])
+                data_str = extrai_data(r['internal_file'])
+                try:
+                    data_date = date.fromisoformat(data_str)
+                except ValueError:
+                    data_date = date(1970, 1, 1)
 
-        # Insert results into ClickHouse
-        if all_resultados:
-            log('INFO', f'A inserir {len(all_resultados)} resultados no ClickHouse...', job_id, ch)
-
-            rows_clearing = []
-            for r in all_resultados:
-                rows_clearing.append({
-                    'job_id': r['job_id'],
-                    'data_ficheiro': r['data_ficheiro'],
-                    'data_date': r['data_date'],
-                    'hora_raw': r['hora_raw'],
-                    'hora_num': r['hora_num'],
-                    'pais': r['pais'],
-                    'preco_clearing_orig': r['preco_clearing_orig'],
-                    'volume_clearing_orig': r['volume_clearing_orig'],
-                    'preco_clearing_sub': r['preco_clearing_sub'],
-                    'volume_clearing_sub': r['volume_clearing_sub'],
-                    'delta_preco': r['delta_preco'],
-                    'n_bids_substituidos': r['n_bids_substituidos']
+                rows_ch.append({
+                    'job_id':                job_id,
+                    'data_ficheiro':         data_str,
+                    'data_date':             data_date,
+                    'hora_raw':              hora_raw,
+                    'hora_num':              hora_num,
+                    'pais':                  r['pais'],
+                    'preco_clearing_orig':   r['preco_clearing_orig'],
+                    'volume_clearing_orig':  r['volume_clearing_orig'],
+                    'preco_clearing_sub':    r['preco_clearing_sub'],
+                    'volume_clearing_sub':   r['volume_clearing_sub'],
+                    'delta_preco':           r['delta_preco'],
+                    'n_bids_substituidos':   r['n_bids_substituidos'] or 0,
                 })
 
-            inserted = ch_insert_batch(ch, 'mibel.clearing_substituicao', rows_clearing)
-            log('INFO', f'Inseridos {inserted} resultados em clearing_substituicao', job_id, ch)
+            inserted = ch_insert_batch(ch, 'mibel.clearing_substituicao', rows_ch)
+            log('INFO', f'Inseridos {inserted} registos em clearing_substituicao', job_id, ch)
+        else:
+            log('AVISO', 'Sem resultados de clearing para inserir', job_id, ch)
 
         if all_logs:
-            log('INFO', f'A inserir {len(all_logs)} logs de substituição...', job_id, ch)
+            log('INFO', f'A inserir {len(all_logs)} linhas em clearing_substituicao_logs…', job_id, ch)
 
-            rows_logs = []
+            logs_ch = []
             for l in all_logs:
-                rows_logs.append({
-                    'job_id': l['job_id'],
-                    'data_ficheiro': l['data_ficheiro'],
-                    'data_date': l['data_date'],
-                    'hora_raw': l['hora_raw'],
-                    'hora_num': l['hora_num'],
-                    'pais': l['pais'],
-                    'unidade': l.get('unidade', ''),
-                    'categoria': l.get('categoria', ''),
-                    'escalao_preco': l.get('escalao_preco', 0),
-                    'preco_original': l.get('preco_original', 0),
-                    'energia_mw': l.get('energia_mw', 0)
+                hora_raw, hora_num, _ = normaliza_hora(l.get('Hora', '0'))
+                data_str = extrai_data(l.get('internal_file', ''))
+                try:
+                    data_date = date.fromisoformat(data_str)
+                except ValueError:
+                    data_date = date(1970, 1, 1)
+
+                logs_ch.append({
+                    'job_id':        job_id,
+                    'data_ficheiro': data_str,
+                    'data_date':     data_date,
+                    'hora_raw':      hora_raw,
+                    'hora_num':      hora_num,
+                    'pais':          l.get('pais', ''),
+                    'unidade':       str(l.get('Unidad', '')),
+                    'categoria':     l.get('categoria', ''),
+                    'escalao_preco': float(l.get('escalao_preco', 0) or 0),
+                    'preco_original': float(l.get('preco_original', 0) or 0),
+                    'energia_mw':    float(l.get('Energia_MW', 0) or 0),
                 })
 
-            inserted = ch_insert_batch(ch, 'mibel.clearing_substituicao_logs', rows_logs)
-            log('INFO', f'Inseridos {inserted} logs em clearing_substituicao_logs', job_id, ch)
+            inserted = ch_insert_batch(ch, 'mibel.clearing_substituicao_logs', logs_ch)
+            log('INFO', f'Inseridos {inserted} registos em clearing_substituicao_logs', job_id, ch)
 
-        # Summary
-        total_bids_sub = sum(r['n_bids_substituidos'] for r in all_resultados)
-        log('INFO', f'Total: {len(all_resultados)} períodos | {total_bids_sub} bids substituídos', job_id, ch)
+        # ── 5. Resumo final ──────────────────────────────────────────────────
+        log('INFO', '═' * 60, job_id, ch)
+        total_bids_sub = sum(r.get('n_bids_substituidos', 0) for r in all_rows)
+        precos_o = [r['preco_clearing_orig'] for r in all_rows if r['preco_clearing_orig'] is not None]
+        precos_s = [r['preco_clearing_sub']  for r in all_rows if r['preco_clearing_sub']  is not None]
+        deltas   = [r['delta_preco']         for r in all_rows if r['delta_preco']          is not None]
 
-        if errors:
-            log('AVISO', f'{len(errors)} ficheiros com erros', job_id, ch)
+        if precos_o:
+            log('INFO',
+                f'Preço médio original : {sum(precos_o)/len(precos_o):.4f} €/MWh', job_id, ch)
+        if precos_s:
+            log('INFO',
+                f'Preço médio simulado : {sum(precos_s)/len(precos_s):.4f} €/MWh', job_id, ch)
+        if deltas:
+            log('INFO',
+                f'Delta médio          : {sum(deltas)/len(deltas):+.4f} €/MWh  '
+                f'(min={min(deltas):+.4f}  max={max(deltas):+.4f})', job_id, ch)
 
+        log('INFO', f'Períodos processados : {len(all_rows)}', job_id, ch)
+        log('INFO', f'Bids substituídos    : {total_bids_sub}', job_id, ch)
+        log('INFO', f'ZIPs com erro        : {len(erros)}', job_id, ch)
+
+        if erros:
+            for e in erros:
+                log('AVISO', f'  Ficheiro com erro: {e}', job_id, ch)
+
+        log('INFO', '═' * 60, job_id, ch)
         log('STATUS', 'DONE', job_id, ch)
         return True
 
     except Exception as e:
-        error_msg = f'Erro fatal: {e}\n{traceback.format_exc()}'
-        log('ERRO', error_msg, job_id, ch)
+        msg = f'Erro fatal: {e}\n{traceback.format_exc()}'
+        log('ERRO', msg, job_id, ch)
         log('STATUS', 'FAILED', job_id, ch)
         return False
 
@@ -408,38 +869,39 @@ def run_worker(job_id: str, data_inicio: str, data_fim: str, n_workers: int = 4)
         if ch:
             try:
                 ch.disconnect()
-            except:
+            except Exception:
                 pass
 
-# ============================================================================
-# CLI Entry Point
-# ============================================================================
 
-def main():
-    parser = argparse.ArgumentParser(description='MIBEL Substitution Worker')
-    parser.add_argument('--job_id', required=True, help='Job UUID')
-    parser.add_argument('--data_inicio', required=True, help='Start date (YYYY-MM-DD)')
-    parser.add_argument('--data_fim', required=True, help='End date (YYYY-MM-DD)')
-    parser.add_argument('--workers', type=int, default=4, help='Number of parallel workers')
+# ══════════════════════════════════════════════════════════════════════════════
+#  CLI
+# ══════════════════════════════════════════════════════════════════════════════
 
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description='MIBEL Substituição Worker — clearing original + PRE substituição'
+    )
+    parser.add_argument('--job_id',      required=True, help='UUID do job (SQLite)')
+    parser.add_argument('--data_inicio', required=True, help='Data início YYYY-MM-DD')
+    parser.add_argument('--data_fim',    required=True, help='Data fim YYYY-MM-DD')
+    parser.add_argument('--workers',     type=int, default=4,
+                        help='Threads paralelas (default: 4)')
     args = parser.parse_args()
 
-    # Validate dates
     try:
         date.fromisoformat(args.data_inicio)
         date.fromisoformat(args.data_fim)
     except ValueError as e:
-        print(f'[ERRO] Invalid date format: {e}', flush=True)
+        print(f'[ERRO] Formato de data inválido: {e}', flush=True)
         sys.exit(1)
 
-    success = run_worker(
-        job_id=args.job_id,
-        data_inicio=args.data_inicio,
-        data_fim=args.data_fim,
-        n_workers=args.workers
+    ok = run_worker(
+        job_id      = args.job_id,
+        data_inicio = args.data_inicio,
+        data_fim    = args.data_fim,
+        n_workers   = args.workers,
     )
-
-    sys.exit(0 if success else 1)
+    sys.exit(0 if ok else 1)
 
 
 if __name__ == '__main__':

@@ -59,10 +59,10 @@ function store(): void
         $workersN
     );
 
-    // Ensure output directory exists
+    // Ensure output directory exists and is writable
     $outputDir = '/data/outputs';
     if (!is_dir($outputDir)) {
-        mkdir($outputDir, 0755, true);
+        mkdir($outputDir, 0777, true);
     }
 
     // Determine worker script
@@ -174,10 +174,10 @@ function cancelar(string $id): void
     // In production, we would need to track the PID and kill it
     $jobs->updateStatus($id, 'FAILED', '', 'Cancelado pelo utilizador');
 
-    // Append cancellation to log
+    // Append cancellation marker to log (non-fatal if directory not writable)
     $logPath = "/data/outputs/{$id}.log";
     $timestamp = date('Y-m-d H:i:s');
-    file_put_contents(
+    @file_put_contents(
         $logPath,
         "\n[{$timestamp}] [STATUS] FAILED - Cancelado pelo utilizador\n",
         FILE_APPEND
