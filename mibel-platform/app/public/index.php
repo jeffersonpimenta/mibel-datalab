@@ -278,10 +278,101 @@
              TAB 4: Resultados
              ================================================================ -->
         <div id="tab-resultados" class="tab-content">
-            <div class="placeholder">
-                <h3>Visualização de Resultados</h3>
-                <p class="text-muted">Em construção — será implementado na TASK-07</p>
+
+            <!-- Empty state — no job selected yet -->
+            <div id="res-empty" class="empty-state">
+                <h3>Seleccione um estudo concluído</h3>
+                <p class="text-muted">Clique em "Ver resultados" na Aba 3 para visualizar.</p>
             </div>
+
+            <!-- Content — populated by JS when a job is loaded -->
+            <div id="res-content" hidden>
+
+                <!-- Header row -->
+                <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+                    <div>
+                        <h2 id="res-titulo" style="margin:0 0 0.25rem">Resultados</h2>
+                        <div id="res-badges" class="flex gap-2 flex-wrap"></div>
+                    </div>
+                    <div class="flex gap-2 flex-wrap items-center">
+                        <select id="res-pais-filter" class="form-select" onchange="ResultadosTab.setPais(this.value)">
+                            <option value="">Todos os países</option>
+                            <option value="MI">MI (MIBEL)</option>
+                            <option value="ES">ES (Espanha)</option>
+                            <option value="PT">PT (Portugal)</option>
+                        </select>
+                        <a id="res-export-csv"  class="btn btn-secondary" download>Exportar CSV</a>
+                        <a id="res-export-json" class="btn btn-secondary" download>Exportar JSON</a>
+                    </div>
+                </div>
+
+                <!-- Stat cards -->
+                <div class="stat-cards mb-3" id="res-stat-cards"></div>
+
+                <!-- No-data message (hidden unless 0 rows) -->
+                <div id="res-no-data" class="card mb-3" hidden>
+                    <div class="card-body text-center text-muted" style="padding:3rem">
+                        Sem dados para este estudo.
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div id="res-charts-section">
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h2>Evolução do Preço de Clearing</h2>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="chart-serie" height="100"></canvas>
+                        </div>
+                    </div>
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h2>Delta Médio por Hora do Dia</h2>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="chart-delta" height="80"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Paginated data table -->
+                <div class="card" id="res-tabela-section">
+                    <div class="card-header">
+                        <h2>Dados por Período</h2>
+                        <div class="flex gap-2 items-center">
+                            <span id="res-tabela-info" class="text-sm text-muted"></span>
+                            <button class="btn btn-secondary btn-sm" id="res-btn-prev" onclick="ResultadosTab.prevPage()">← Anterior</button>
+                            <button class="btn btn-secondary btn-sm" id="res-btn-next" onclick="ResultadosTab.nextPage()">Próximo →</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Hora</th>
+                                    <th>País</th>
+                                    <th class="text-right">P.Orig (€/MWh)</th>
+                                    <th class="text-right">P.Sim (€/MWh)</th>
+                                    <th class="text-right">Δ Preço</th>
+                                    <th class="text-right">Vol.Orig (MWh)</th>
+                                    <th class="text-right">Vol.Sim (MWh)</th>
+                                    <th class="text-right">Bids Sub.</th>
+                                </tr>
+                            </thead>
+                            <tbody id="res-tabela-tbody">
+                                <tr>
+                                    <td colspan="9" class="loading">
+                                        <span class="spinner"></span> A carregar...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div><!-- /#res-content -->
         </div>
     </main>
 
@@ -304,6 +395,7 @@
         </div>
     </dialog>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>
