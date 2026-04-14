@@ -1,1 +1,262 @@
-[]
+[
+    {
+        "tecnologia": "RE Mercado Solar Fotovoltáica",
+        "regime": "PRE",
+        "categoria": "SOLAR_FOT"
+    },
+    {
+        "tecnologia": "RE Mercado Solar Térmica",
+        "regime": "PRE",
+        "categoria": "SOLAR_TER"
+    },
+    {
+        "tecnologia": "RE Mercado Eólica",
+        "regime": "PRE",
+        "categoria": "EOLICA"
+    },
+    {
+        "tecnologia": "RE Mercado Eólica Marina",
+        "regime": "PRE",
+        "categoria": "EOLICA_MARINA"
+    },
+    {
+        "tecnologia": "RE Mercado Hidráulica",
+        "regime": "PRE",
+        "categoria": "HIDRICA"
+    },
+    {
+        "tecnologia": "RE Mercado Térmica Renovable",
+        "regime": "PRE",
+        "categoria": "TERMICA_RENOV"
+    },
+    {
+        "tecnologia": "RE Mercado Térmica no Renovab.",
+        "regime": "PRE",
+        "categoria": "TERMICA_NREN"
+    },
+    {
+        "tecnologia": "RE Mercado Geotérmica",
+        "regime": "PRE",
+        "categoria": "GEOTERMICA"
+    },
+    {
+        "tecnologia": "Híbrida Renovable",
+        "regime": "PRE",
+        "categoria": "HIBRIDA_RENOV"
+    },
+    {
+        "tecnologia": "Híbrida Renov.-Almacenamiento",
+        "regime": "PRE",
+        "categoria": "HIBRIDA_RENOV"
+    },
+    {
+        "tecnologia": "Híbrida Renov.-Térmica",
+        "regime": "PRE",
+        "categoria": "HIBRIDA_RENOV"
+    },
+    {
+        "tecnologia": "RE Tarifa CUR (uof)",
+        "regime": "PRE",
+        "categoria": "RE_TARIFA_CUR"
+    },
+    {
+        "tecnologia": "RE Tar. CUR Eólica",
+        "regime": "PRE",
+        "categoria": "RE_TARIFA_CUR"
+    },
+    {
+        "tecnologia": "RE Tar. CUR Solar Fotovoltáica",
+        "regime": "PRE",
+        "categoria": "RE_TARIFA_CUR"
+    },
+    {
+        "tecnologia": "RE Tar. CUR Solar Térmica",
+        "regime": "PRE",
+        "categoria": "RE_TARIFA_CUR"
+    },
+    {
+        "tecnologia": "RE Tar. CUR Hidráulica",
+        "regime": "PRE",
+        "categoria": "RE_TARIFA_CUR"
+    },
+    {
+        "tecnologia": "RE Tar. CUR Térmica Renovable",
+        "regime": "PRE",
+        "categoria": "RE_TARIFA_CUR"
+    },
+    {
+        "tecnologia": "RE Tar. CUR Térmica no Renov.",
+        "regime": "PRE",
+        "categoria": "RE_TARIFA_CUR"
+    },
+    {
+        "tecnologia": "Agente vendedor Reg. Especial",
+        "regime": "PRE",
+        "categoria": "RE_OUTRO"
+    },
+    {
+        "tecnologia": "Almacenamiento Venta",
+        "regime": "PRE",
+        "categoria": "ARMAZENAMENTO_VENDA"
+    },
+    {
+        "tecnologia": "Ciclo Combinado",
+        "regime": "PRO",
+        "categoria": "CICLO_COMBINADO"
+    },
+    {
+        "tecnologia": "Nuclear",
+        "regime": "PRO",
+        "categoria": "NUCLEAR"
+    },
+    {
+        "tecnologia": "Hidráulica Generación",
+        "regime": "PRO",
+        "categoria": "HIDRICA_PRO"
+    },
+    {
+        "tecnologia": "Hidráulica de Bombeo Puro",
+        "regime": "PRO",
+        "categoria": "BOMBEO_PURO_PRO"
+    },
+    {
+        "tecnologia": "Hulla Antracita",
+        "regime": "PRO",
+        "categoria": "CARVAO"
+    },
+    {
+        "tecnologia": "Carbón de Importación",
+        "regime": "PRO",
+        "categoria": "CARVAO"
+    },
+    {
+        "tecnologia": "Gas",
+        "regime": "PRO",
+        "categoria": "GAS"
+    },
+    {
+        "tecnologia": "Consumo Bombeo Mixto",
+        "regime": "CONSUMO",
+        "categoria": "BOMBEO_CONSUMO"
+    },
+    {
+        "tecnologia": "Consumo Bombeo Puro",
+        "regime": "CONSUMO",
+        "categoria": "BOMBEO_CONSUMO"
+    },
+    {
+        "tecnologia": "Consumo de bombeo",
+        "regime": "CONSUMO",
+        "categoria": "BOMBEO_CONSUMO"
+    },
+    {
+        "tecnologia": "Almacenamiento Compra",
+        "regime": "CONSUMO",
+        "categoria": "ARMAZENAMENTO_COMPRA"
+    },
+    {
+        "tecnologia": "Compras Consumo Directo",
+        "regime": "CONSUMO",
+        "categoria": "CONS_DIRECTO"
+    },
+    {
+        "tecnologia": "Consumidor directo",
+        "regime": "CONSUMO",
+        "categoria": "CONS_DIRECTO"
+    },
+    {
+        "tecnologia": "Compras Cons. Directo Balance",
+        "regime": "CONSUMO",
+        "categoria": "CONS_DIRECTO"
+    },
+    {
+        "tecnologia": "Rep. de consumidores directos",
+        "regime": "CONSUMO",
+        "categoria": "CONS_DIRECTO"
+    },
+    {
+        "tecnologia": "Compras Consumos Auxiliares",
+        "regime": "CONSUMO",
+        "categoria": "CONS_AUXILIARES"
+    },
+    {
+        "tecnologia": "Rep. Consumos Auxiliares",
+        "regime": "CONSUMO",
+        "categoria": "CONS_AUXILIARES"
+    },
+    {
+        "tecnologia": "Consumo de productores",
+        "regime": "CONSUMO",
+        "categoria": "CONS_PRODUTOR"
+    },
+    {
+        "tecnologia": "Comercializador",
+        "regime": "COMERCIALIZADOR",
+        "categoria": "COMERC"
+    },
+    {
+        "tecnologia": "Comercializador no residente",
+        "regime": "COMERCIALIZADOR",
+        "categoria": "COMERC_NR"
+    },
+    {
+        "tecnologia": "Compras Comercialización",
+        "regime": "COMERCIALIZADOR",
+        "categoria": "COMERC"
+    },
+    {
+        "tecnologia": "Compra Comercializador Balance",
+        "regime": "COMERCIALIZADOR",
+        "categoria": "COMERC"
+    },
+    {
+        "tecnologia": "Import. de agentes externos",
+        "regime": "COMERCIALIZADOR",
+        "categoria": "COMERC_EXT"
+    },
+    {
+        "tecnologia": "Import. de comercializadoras",
+        "regime": "COMERCIALIZADOR",
+        "categoria": "COMERC_EXT"
+    },
+    {
+        "tecnologia": "Rep. de comercializadores",
+        "regime": "COMERCIALIZADOR",
+        "categoria": "COMERC"
+    },
+    {
+        "tecnologia": "Comercializador ultimo recurso",
+        "regime": "COMERCIALIZADOR",
+        "categoria": "COMERC_ULT_REC"
+    },
+    {
+        "tecnologia": "Unidad Generica",
+        "regime": "GENERICA",
+        "categoria": "GENERICA"
+    },
+    {
+        "tecnologia": "VENTA GENERICA",
+        "regime": "GENERICA",
+        "categoria": "GENERICA_VENDA"
+    },
+    {
+        "tecnologia": "Porfolio Produccion Compra",
+        "regime": "PORFOLIO",
+        "categoria": "PORTF_PROD"
+    },
+    {
+        "tecnologia": "Porfolio Produccion Venta",
+        "regime": "PORFOLIO",
+        "categoria": "PORTF_PROD"
+    },
+    {
+        "tecnologia": "Porfolio Comerc. Compra",
+        "regime": "PORFOLIO",
+        "categoria": "PORTF_COMERC"
+    },
+    {
+        "tecnologia": "Porfolio Comerc. Venta",
+        "regime": "PORFOLIO",
+        "categoria": "PORTF_COMERC"
+    }
+]

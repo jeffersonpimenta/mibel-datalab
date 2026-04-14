@@ -1,0 +1,278 @@
+{
+    "PRE": {
+        "SOLAR_FOT_ES": {
+            "escala": 2.2297,
+            "escaloes": [
+                {
+                    "preco": 0,
+                    "pct_bids": 0.3
+                },
+                {
+                    "preco": 20,
+                    "pct_bids": 0.3
+                },
+                {
+                    "preco": 35,
+                    "pct_bids": 0.4
+                }
+            ]
+        },
+        "SOLAR_FOT_PT": {
+            "escala": 3.6879,
+            "escaloes": [
+                {
+                    "preco": 0,
+                    "pct_bids": 0.3
+                },
+                {
+                    "preco": 20,
+                    "pct_bids": 0.3
+                },
+                {
+                    "preco": 35,
+                    "pct_bids": 0.4
+                }
+            ]
+        },
+        "SOLAR_TER_ES": {
+            "escala": 2.0869,
+            "escaloes": [
+                {
+                    "preco": 40,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "EOLICA_ES": {
+            "escala": 1.8857,
+            "escaloes": [
+                {
+                    "preco": 50,
+                    "pct_bids": 0.5
+                },
+                {
+                    "preco": 70,
+                    "pct_bids": 0.5
+                }
+            ]
+        },
+        "EOLICA_PT": {
+            "escala": 2.1379,
+            "escaloes": [
+                {
+                    "preco": 50,
+                    "pct_bids": 0.5
+                },
+                {
+                    "preco": 70,
+                    "pct_bids": 0.5
+                }
+            ]
+        },
+        "EOLICA_MARINA_ES": {
+            "escala": 1,
+            "escaloes": [
+                {
+                    "preco": 0,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "HIDRICA_ES": {
+            "escala": 1,
+            "escaloes": [
+                {
+                    "preco": 15,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "TERMICA_RENOV_ES": {
+            "escala": 1.4,
+            "escaloes": [
+                {
+                    "preco": 10,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "TERMICA_RENOV_PT": {
+            "escala": 1.5348,
+            "escaloes": [
+                {
+                    "preco": 10,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "TERMICA_NREN_ES": {
+            "escala": 1,
+            "escaloes": [
+                {
+                    "preco": 60,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "GEOTERMICA_ES": {
+            "escala": 1,
+            "escaloes": [
+                {
+                    "preco": 30,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "HIBRIDA_RENOV_ES": {
+            "escala": 1,
+            "escaloes": [
+                {
+                    "preco": 45,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "RE_TARIFA_CUR_ES": {
+            "escala": 1.7,
+            "escaloes": [
+                {
+                    "preco": 0,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "RE_TARIFA_CUR_PT": {
+            "escala": 1.7,
+            "escaloes": [
+                {
+                    "preco": 0,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "RE_OUTRO_ES": {
+            "escala": 1,
+            "escaloes": [
+                {
+                    "preco": 0,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "ARMAZENAMENTO_VENDA_ES": {
+            "escala": 1,
+            "escaloes": [
+                {
+                    "preco": 0,
+                    "pct_bids": 1
+                }
+            ]
+        },
+        "ARMAZENAMENTO_VENDA_PT": {
+            "escala": 1,
+            "escaloes": [
+                {
+                    "preco": 0,
+                    "pct_bids": 1
+                }
+            ]
+        }
+    },
+    "PRO": {
+        "BOMBEO_PURO_PRO_ES": {
+            "escala": 1
+        },
+        "CARVAO_ES": {
+            "escala": 1
+        },
+        "CICLO_COMBINADO_ES": {
+            "escala": 1
+        },
+        "CICLO_COMBINADO_PT": {
+            "escala": 0.7143
+        },
+        "GAS_ES": {
+            "escala": 1
+        },
+        "HIDRICA_PRO_ES": {
+            "escala": 1
+        },
+        "HIDRICA_PRO_PT": {
+            "escala": 1
+        },
+        "NUCLEAR_ES": {
+            "escala": 0.447
+        }
+    },
+    "CONSUMO": {
+        "ARMAZENAMENTO_COMPRA_ES": {
+            "escala": 1
+        },
+        "ARMAZENAMENTO_COMPRA_PT": {
+            "escala": 1
+        },
+        "BOMBEO_CONSUMO_ES": {
+            "escala": 1.6926
+        },
+        "BOMBEO_CONSUMO_PT": {
+            "escala": 1.3871
+        },
+        "CONS_AUXILIARES_ES": {
+            "escala": 1
+        },
+        "CONS_DIRECTO_ES": {
+            "escala": 1.6926
+        },
+        "CONS_DIRECTO_EXT": {
+            "escala": 1.6926
+        },
+        "CONS_PRODUTOR_ES": {
+            "escala": 1
+        }
+    },
+    "COMERCIALIZADOR": {
+        "COMERC_ES": {
+            "escala": 1.3871
+        },
+        "COMERC_EXT": {
+            "escala": 1
+        },
+        "COMERC_NR_EXT": {
+            "escala": 1
+        },
+        "COMERC_PT": {
+            "escala": 1.6926
+        },
+        "COMERC_ULT_REC_ES": {
+            "escala": 1
+        },
+        "COMERC_ULT_REC_PT": {
+            "escala": 1
+        }
+    },
+    "GENERICA": {
+        "GENERICA_ES": {
+            "escala": 1.3871
+        },
+        "GENERICA_PT": {
+            "escala": 1.6926
+        },
+        "GENERICA_VENDA_ES": {
+            "escala": 1.3871
+        },
+        "GENERICA_VENDA_PT": {
+            "escala": 1.6926
+        }
+    },
+    "PORFOLIO": {
+        "PORTF_COMERC_ES": {
+            "escala": 1
+        },
+        "PORTF_PROD_ES": {
+            "escala": 1
+        },
+        "PORTF_PROD_PT": {
+            "escala": 1
+        }
+    }
+}

@@ -1,0 +1,67 @@
+[
+    {
+        "codigo": "ACCGV02",
+        "categoria_zona": "SOLAR_FOT_PT",
+        "motivo": "Unidade PT classificada como ES pelo OMEL"
+    },
+    {
+        "codigo": "AGPRCTI",
+        "categoria_zona": "SOLAR_FOT_PT",
+        "motivo": ""
+    },
+    {
+        "codigo": "AGPRSUL",
+        "categoria_zona": "SOLAR_FOT_PT",
+        "motivo": ""
+    },
+    {
+        "codigo": "EGLEV2",
+        "categoria_zona": "SOLAR_FOT_PT",
+        "motivo": ""
+    },
+    {
+        "codigo": "IGNIV02",
+        "categoria_zona": "SOLAR_FOT_PT",
+        "motivo": ""
+    },
+    {
+        "codigo": "JAFPV02",
+        "categoria_zona": "SOLAR_FOT_PT",
+        "motivo": ""
+    },
+    {
+        "codigo": "AAXRSUL",
+        "categoria_zona": "EOLICA_PT",
+        "motivo": ""
+    },
+    {
+        "codigo": "EDPGPV2",
+        "categoria_zona": "EOLICA_PT",
+        "motivo": ""
+    },
+    {
+        "codigo": "GRENV02",
+        "categoria_zona": "EOLICA_PT",
+        "motivo": ""
+    },
+    {
+        "codigo": "INATV02",
+        "categoria_zona": "EOLICA_PT",
+        "motivo": ""
+    },
+    {
+        "codigo": "LEZIV02",
+        "categoria_zona": "EOLICA_PT",
+        "motivo": ""
+    },
+    {
+        "codigo": "MUONV02",
+        "categoria_zona": "EOLICA_PT",
+        "motivo": ""
+    },
+    {
+        "codigo": "TSRDV02",
+        "categoria_zona": "EOLICA_PT",
+        "motivo": ""
+    }
+]
