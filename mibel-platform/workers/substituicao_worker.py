@@ -4,14 +4,16 @@ MIBEL Platform — Substituição Worker
 =====================================
 Implementa exactamente a lógica do script
 clearing_substituicao_multithread - C1.py, adaptada para a plataforma:
-  • Configuração lida de /data/config/parametros.json e classificacao/excecoes
+  • Configuração lida de /data/config/parametros.json (escalões)
+  • Mapa de unidades lido de mibel.unidades (ClickHouse), populado por
+    scripts/unidades/carrega_unidades_ch.py a partir de LISTA_UNIDADES.csv
   • Resultados inseridos no ClickHouse (clearing_substituicao + _logs)
   • Logging compreensivo para stdout e para a tabela worker_logs
 
 Fluxo de processamento
 ──────────────────────
   1. Carrega escalões (parametros.json) e mapa de unidades
-     (classificacao.json + excecoes.json)
+     (tabela mibel.unidades: CODIGO → regime + categoria_zona)
   2. Descobre ZIPs em /data/bids/ no intervalo de datas solicitado
   3. Para cada ZIP (paralelo nível-1):
        Para cada CSV interno (paralelo nível-2):
@@ -53,9 +55,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # utils.py
 from clearing import clearing  # algoritmo real (pointer + degrau handling)
 from utils import (
     get_ch, ch_insert_batch,
-    carrega_escaloes, carrega_classificacao, carrega_excecoes,
+    carrega_escaloes,
+    carrega_mapa_unidades_ch,
     zip_files_no_intervalo, extrai_data, extrai_periodo_zip, normaliza_hora,
-    sufixo_de_pais, ensure_output_dir,
+    ensure_output_dir,
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -128,61 +131,33 @@ COLUNAS_OBRIGATORIAS = ('Hora', 'Pais', 'Tipo Oferta', 'Unidad', 'Energia', 'Pre
 
 def build_mapa_unidades(
     df: pd.DataFrame,
-    mapa_tec: dict,   # tecnologia_str → (regime, categoria_base)
-    excecoes: dict,   # CODIGO_UPPER → categoria_zona  (já com sufixo _ES/_PT)
-    escaloes: dict,   # ESCALOES completo (para validação)
+    mapa_unidades_ch: dict,  # {CODIGO_UPPER: (regime, categoria_zona)} — da tabela mibel.unidades
+    escaloes: dict,          # ESCALOES completo (para validação)
 ) -> dict:
     """
-    Constrói {CODIGO_upper → (regime, categoria_zona)} a partir do DataFrame
-    de bids lido do ficheiro e da configuração da plataforma.
+    Constrói {CODIGO_upper → (regime, categoria_zona)} filtrando do mapa
+    pré-classificado da tabela mibel.unidades pelas unidades presentes neste ficheiro.
 
-    Prioridade de classificação:
-      1. Excepção por código de unidade (maior precedência, inclui sufixo)
-      2. Mapeamento por TIPO_UNIDAD + sufixo do país (MI→_ES, PT→_PT)
-      3. Unidade não classificada → excluída do mapa
+    A classificação (regime + categoria com sufixo _ES/_PT/_EXT) já foi calculada
+    por classificacao_pre.py a partir de LISTA_UNIDADES.csv, que contém a zona
+    de cada unidade. Não é necessário inferir o sufixo a partir do campo Pais
+    do ficheiro de bids.
 
-    O resultado é um dicionário plano idêntico ao produzido por
-    carrega_unidades() no script original.
+    Unidades não presentes na tabela ou cujo regime/categoria não existe nos
+    escalões configurados são excluídas do mapa e ignoradas.
     """
-    mapa: dict = {}
-    has_tipo = 'TIPO_UNIDAD' in df.columns
-
-    unidades_uniq = (
-        df[['Unidad', 'Pais'] + (['TIPO_UNIDAD'] if has_tipo else [])]
-        .drop_duplicates()
-        .itertuples(index=False)
+    unidades_no_ficheiro = set(
+        df['Unidad'].astype(str).str.strip().str.upper().unique()
     )
 
-    for row in unidades_uniq:
-        unidade = str(row.Unidad).strip().upper()
-        pais    = str(row.Pais).strip()
-        tipo    = str(getattr(row, 'TIPO_UNIDAD', '')).strip() if has_tipo else ''
-
-        # 1. Excepção por código
-        if unidade in excecoes:
-            cat_zona = excecoes[unidade]
-            regime_found = 'NAO_CLASSIFICADO'
-            for regime_key, cats in escaloes.items():
-                if isinstance(cats, dict) and cat_zona in cats:
-                    regime_found = regime_key
-                    break
-            mapa[unidade] = (regime_found, cat_zona)
+    mapa: dict = {}
+    for unidade in unidades_no_ficheiro:
+        if unidade not in mapa_unidades_ch:
             continue
-
-        # 2. Por tecnologia
-        if tipo and tipo in mapa_tec:
-            regime, cat_base = mapa_tec[tipo]
-            sufixo   = sufixo_de_pais(pais)
-            cat_zona = cat_base + sufixo
-
-            if regime in escaloes and isinstance(escaloes[regime], dict):
-                if cat_zona in escaloes[regime]:
-                    mapa[unidade] = (regime, cat_zona)
-                    continue
-                # fallback: sem sufixo (categorias como COMERC_EXT)
-                if cat_base in escaloes[regime]:
-                    mapa[unidade] = (regime, cat_base)
-                    continue
+        regime, cat_zona = mapa_unidades_ch[unidade]
+        if regime in escaloes and isinstance(escaloes[regime], dict):
+            if cat_zona in escaloes[regime]:
+                mapa[unidade] = (regime, cat_zona)
 
     return mapa
 
@@ -456,8 +431,7 @@ def _processa_hora_pais(
 def _processa_internal_file(
     zip_path: str,
     internal_file: str,
-    mapa_tec: dict,
-    excecoes: dict,
+    mapa_unidades_ch: dict,
     escaloes: dict,
     workers_hora_pais: int,
     job_id: str,
@@ -516,7 +490,7 @@ def _processa_internal_file(
         job_id, ch)
 
     # ── Construção do mapa de unidades ──────────────────────────────────────
-    mapa_unidades = build_mapa_unidades(df, mapa_tec, excecoes, escaloes)
+    mapa_unidades = build_mapa_unidades(df, mapa_unidades_ch, escaloes)
 
     contagem_regime: dict[str, int] = {}
     for reg, _ in mapa_unidades.values():
@@ -606,8 +580,7 @@ def _processa_internal_file(
 
 def _processa_zip(
     zip_path: str,
-    mapa_tec: dict,
-    excecoes: dict,
+    mapa_unidades_ch: dict,
     escaloes: dict,
     workers_interno: int,
     workers_hora_pais: int,
@@ -671,7 +644,7 @@ def _processa_zip(
             ex.submit(
                 _processa_internal_file,
                 zip_path, ifile,
-                mapa_tec, excecoes, escaloes,
+                mapa_unidades_ch, escaloes,
                 workers_hora_pais, job_id, None,  # ch=None nas threads filho
             ): ifile
             for ifile in internal_files
@@ -724,20 +697,15 @@ def run_worker(
         log('INFO', '═' * 60, job_id, ch)
 
         # ── 1. Carregar configuração ─────────────────────────────────────────
-        log('INFO', 'A carregar configuração (escalões, classificação, excepções)…', job_id, ch)
-        escaloes    = carrega_escaloes()
-        classif     = carrega_classificacao()    # [{tecnologia, regime, categoria}]
-        exc_list    = carrega_excecoes()         # [{codigo, categoria_zona, motivo}]
-
-        mapa_tec = {e['tecnologia']: (e['regime'], e['categoria']) for e in classif}
-        excecoes = {e['codigo'].upper(): e['categoria_zona'] for e in exc_list}
+        log('INFO', 'A carregar configuração (escalões + mapa de unidades do ClickHouse)…', job_id, ch)
+        escaloes         = carrega_escaloes()
+        mapa_unidades_ch = carrega_mapa_unidades_ch(ch)  # {CODIGO: (regime, categoria)} da tabela mibel.unidades
 
         n_pre    = len(escaloes.get('PRE', {}))
         n_outras = sum(len(v) for k, v in escaloes.items() if k != 'PRE')
         log('INFO',
             f'Configuração: '
-            f'{len(mapa_tec)} tecnologias | '
-            f'{len(excecoes)} excepções | '
+            f'{len(mapa_unidades_ch)} unidades classificadas | '
             f'{n_pre} categorias PRE | '
             f'{n_outras} categorias outras classes',
             job_id, ch)
@@ -771,7 +739,7 @@ def run_worker(
             futures = {
                 ex.submit(
                     _processa_zip,
-                    zp, mapa_tec, excecoes, escaloes,
+                    zp, mapa_unidades_ch, escaloes,
                     workers_interno, workers_hora_pais,
                     job_id, None,  # ch=None nas threads filho
                     data_inicio, data_fim,
