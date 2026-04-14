@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MIBEL Bid Analyzer</title>
+    <title>Analizador de Mercado</title>
     <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
     <header>
-        <h1><span>MIBEL</span> Bid Analyzer</h1>
+        <h1><span>MIBEL</span> Analizador de Mercado</h1>
         <div class="status-indicator">
             <span id="status-dot" class="status-dot"></span>
             <span id="status-text">A verificar...</span>
