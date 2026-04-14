@@ -38,3 +38,8 @@ WORKDIR /var/www/html
 
 # Set Composer to ignore memory limits during install if it's still crashing
 RUN COMPOSER_MEMORY_LIMIT=-1 composer require phpoffice/phpspreadsheet:^2.0 --no-interaction --prefer-dist
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

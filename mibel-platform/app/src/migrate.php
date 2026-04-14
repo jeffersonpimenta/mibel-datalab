@@ -206,13 +206,18 @@ echo "1. ClickHouse Database\n";
 $result = clickhouseQuery($clickhouseHost, $clickhousePort, 'CREATE DATABASE IF NOT EXISTS mibel');
 printStatus($result['success'], "Create database 'mibel'" . ($result['success'] ? '' : " - {$result['error']}"));
 
-if (!$result['success']) {
-    echo "\nFailed to connect to ClickHouse. Please ensure the service is running.\n";
-    exit(1);
+$clickhouseOk = $result['success'];
+if (!$clickhouseOk) {
+    echo "\n[AVISO] ClickHouse indisponível — as tabelas não serão criadas agora.\n";
+    echo "        Execute novamente após o ClickHouse estar pronto.\n";
 }
 
 // Step 2: Create ClickHouse tables
 echo "\n2. ClickHouse Tables\n";
+
+if (!$clickhouseOk) {
+    echo "[IGNORADO] ClickHouse indisponível.\n";
+}
 
 $clickhouseTables = [
     'bids_raw' => "
@@ -282,9 +287,11 @@ $clickhouseTables = [
     ",
 ];
 
-foreach ($clickhouseTables as $tableName => $createSql) {
-    $result = clickhouseQuery($clickhouseHost, $clickhousePort, $createSql, 'mibel');
-    printStatus($result['success'], "Create table '{$tableName}'" . ($result['success'] ? '' : " - {$result['error']}"));
+if ($clickhouseOk) {
+    foreach ($clickhouseTables as $tableName => $createSql) {
+        $result = clickhouseQuery($clickhouseHost, $clickhousePort, $createSql, 'mibel');
+        printStatus($result['success'], "Create table '{$tableName}'" . ($result['success'] ? '' : " - {$result['error']}"));
+    }
 }
 
 // Step 3: Create data directories
@@ -424,13 +431,17 @@ if (!empty($toAddExc) || !file_exists($excPath)) {
 echo "\n6. Verification\n";
 
 // Verify ClickHouse tables
-$result = clickhouseQuery($clickhouseHost, $clickhousePort, "SELECT name FROM system.tables WHERE database='mibel' FORMAT JSONCompact");
-if ($result['success']) {
-    $data = json_decode($result['response'], true);
-    $tableCount = count($data['data'] ?? []);
-    printStatus($tableCount >= 4, "ClickHouse tables: {$tableCount} found");
+if ($clickhouseOk) {
+    $result = clickhouseQuery($clickhouseHost, $clickhousePort, "SELECT name FROM system.tables WHERE database='mibel' FORMAT JSONCompact");
+    if ($result['success']) {
+        $data = json_decode($result['response'], true);
+        $tableCount = count($data['data'] ?? []);
+        printStatus($tableCount >= 4, "ClickHouse tables: {$tableCount} found");
+    } else {
+        printStatus(false, "Could not verify ClickHouse tables");
+    }
 } else {
-    printStatus(false, "Could not verify ClickHouse tables");
+    printStatus(false, "ClickHouse tables: ignorado (serviço indisponível)");
 }
 
 // Verify SQLite
