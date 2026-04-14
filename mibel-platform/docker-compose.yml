@@ -44,7 +44,6 @@ services:
     volumes:
       - ./workers:/app
       - ./data:/data
-      - ./scripts:/scripts:ro
     command: tail -f /dev/null
     depends_on:
       - clickhouse
