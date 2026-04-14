@@ -47,7 +47,7 @@ from typing import Optional
 import pandas as pd
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-sys.path.insert(0, '/scripts')                              # clearing.py
+sys.path.insert(0, '/app')                              # clearing.py
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # utils.py
 
 from clearing import clearing  # algoritmo real (pointer + degrau handling)
