@@ -54,7 +54,7 @@ from clearing import clearing  # algoritmo real (pointer + degrau handling)
 from utils import (
     get_ch, ch_insert_batch,
     carrega_escaloes, carrega_classificacao, carrega_excecoes,
-    zip_files_no_intervalo, extrai_data, normaliza_hora,
+    zip_files_no_intervalo, extrai_data, extrai_periodo_zip, normaliza_hora,
     sufixo_de_pais, ensure_output_dir,
 )
 
@@ -613,10 +613,15 @@ def _processa_zip(
     workers_hora_pais: int,
     job_id: str,
     ch,
+    data_inicio: str = '',
+    data_fim: str = '',
 ) -> tuple[list, list]:
     """
     Nível 1 — abre um ZIP, lista os seus ficheiros CSV internos e paraleliza
     o processamento com um sub-pool de threads.
+
+    Quando data_inicio/data_fim são fornecidos, filtra os ficheiros internos
+    ao intervalo solicitado (útil para ZIPs mensais com CSVs diários).
 
     Devolve (rows, logs) acumulados de todos os ficheiros internos.
     """
@@ -625,12 +630,38 @@ def _processa_zip(
 
     try:
         with zipfile.ZipFile(zip_path, 'r') as z:
-            internal_files = z.namelist()
+            all_internal = z.namelist()
     except Exception as e:
         log('ERRO', f'{zip_nome}: não foi possível abrir o ZIP — {e}', job_id, ch)
         return [], []
 
-    log('INFO', f'{zip_nome}: {len(internal_files)} ficheiro(s) interno(s): {internal_files}', job_id, ch)
+    # Filtrar ficheiros internos pelo intervalo de datas (para ZIPs mensais)
+    if data_inicio and data_fim:
+        ini = date.fromisoformat(data_inicio)
+        fim = date.fromisoformat(data_fim)
+        internal_files = []
+        for f in all_internal:
+            d_str = extrai_data(f)
+            if d_str == '1970-01-01':
+                # Nome sem data reconhecível → incluir por precaução
+                internal_files.append(f)
+                continue
+            try:
+                d = date.fromisoformat(d_str)
+                if ini <= d <= fim:
+                    internal_files.append(f)
+            except ValueError:
+                internal_files.append(f)
+
+        excluidos = len(all_internal) - len(internal_files)
+        if excluidos:
+            log('INFO',
+                f'{zip_nome}: {excluidos} ficheiro(s) interno(s) fora do intervalo ignorados',
+                job_id, ch)
+    else:
+        internal_files = all_internal
+
+    log('INFO', f'{zip_nome}: {len(internal_files)} ficheiro(s) interno(s) a processar: {internal_files}', job_id, ch)
 
     rows_zip: list = []
     logs_zip: list = []
@@ -743,6 +774,7 @@ def run_worker(
                     zp, mapa_tec, excecoes, escaloes,
                     workers_interno, workers_hora_pais,
                     job_id, None,  # ch=None nas threads filho
+                    data_inicio, data_fim,
                 ): zp
                 for zp in zip_files
             }
