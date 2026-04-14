@@ -341,26 +341,83 @@ try {
     exit(1);
 }
 
-// Step 5: Create default config files
+// Step 5: Create / seed config files
 echo "\n5. Config Files\n";
 
-$configFiles = [
-    'classificacao.json' => $classificacaoDefault,
-    'excecoes.json' => $excecoesDefault,
-    'parametros.json' => $parametrosDefault,
-];
+// parametros.json — create only if missing (user may customise scales/escalões)
+$parametrosPath = "{$configDir}/parametros.json";
+if (!file_exists($parametrosPath)) {
+    $written = file_put_contents(
+        $parametrosPath,
+        json_encode($parametrosDefault, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    );
+    printStatus($written !== false, "Create 'parametros.json'");
+} else {
+    printStatus(true, "'parametros.json' already exists (skipped)");
+}
 
-foreach ($configFiles as $filename => $defaultContent) {
-    $filepath = "{$configDir}/{$filename}";
-    if (!file_exists($filepath)) {
-        $written = file_put_contents(
-            $filepath,
-            json_encode($defaultContent, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
-        );
-        printStatus($written !== false, "Create '{$filename}'");
-    } else {
-        printStatus(true, "'{$filename}' already exists (skipped)");
+// classificacao.json — merge: add any default entries not yet present (by tecnologia)
+$classPath = "{$configDir}/classificacao.json";
+$existingClass = file_exists($classPath)
+    ? (json_decode(file_get_contents($classPath), true) ?: [])
+    : [];
+
+$existingTecnologias = array_map(
+    fn($e) => strtolower($e['tecnologia']),
+    $existingClass
+);
+
+$toAdd = [];
+foreach ($classificacaoDefault as $entry) {
+    if (!in_array(strtolower($entry['tecnologia']), $existingTecnologias, true)) {
+        $toAdd[] = $entry;
     }
+}
+
+if (!empty($toAdd) || !file_exists($classPath)) {
+    $merged = array_merge($existingClass, $toAdd);
+    $written = file_put_contents(
+        $classPath,
+        json_encode($merged, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    );
+    $label = file_exists($classPath) && !empty($existingClass)
+        ? "Merged 'classificacao.json' (+" . count($toAdd) . " entries)"
+        : "Create 'classificacao.json'";
+    printStatus($written !== false, $label);
+} else {
+    printStatus(true, "'classificacao.json' already up-to-date (" . count($existingClass) . " entries)");
+}
+
+// excecoes.json — merge: add any default exceptions not yet present (by codigo)
+$excPath = "{$configDir}/excecoes.json";
+$existingExc = file_exists($excPath)
+    ? (json_decode(file_get_contents($excPath), true) ?: [])
+    : [];
+
+$existingCodigos = array_map(
+    fn($e) => strtoupper($e['codigo']),
+    $existingExc
+);
+
+$toAddExc = [];
+foreach ($excecoesDefault as $entry) {
+    if (!in_array(strtoupper($entry['codigo']), $existingCodigos, true)) {
+        $toAddExc[] = $entry;
+    }
+}
+
+if (!empty($toAddExc) || !file_exists($excPath)) {
+    $mergedExc = array_merge($existingExc, $toAddExc);
+    $written = file_put_contents(
+        $excPath,
+        json_encode($mergedExc, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    );
+    $label = file_exists($excPath) && !empty($existingExc)
+        ? "Merged 'excecoes.json' (+" . count($toAddExc) . " entries)"
+        : "Create 'excecoes.json'";
+    printStatus($written !== false, $label);
+} else {
+    printStatus(true, "'excecoes.json' already up-to-date (" . count($existingExc) . " entries)");
 }
 
 // Step 6: Verify installation
@@ -382,7 +439,7 @@ printStatus($tableCount >= 2, "SQLite tables: {$tableCount} found");
 
 // Verify config files
 $configCount = 0;
-foreach (array_keys($configFiles) as $filename) {
+foreach (['classificacao.json', 'excecoes.json', 'parametros.json'] as $filename) {
     if (file_exists("{$configDir}/{$filename}")) {
         $configCount++;
     }
