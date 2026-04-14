@@ -60,7 +60,7 @@ function toast(msg, type = 'info') {
 // Tab Navigation
 // ============================================================================
 
-function switchTab(tabId) {
+function switchTab(tabId, jobId = null) {
     // Update nav buttons
     document.querySelectorAll('nav button').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.tab === tabId);
@@ -72,7 +72,7 @@ function switchTab(tabId) {
     });
 
     // Trigger tab load event
-    const event = new CustomEvent('tabLoad', { detail: { tabId } });
+    const event = new CustomEvent('tabLoad', { detail: { tabId, jobId } });
     document.dispatchEvent(event);
 }
 
@@ -879,6 +879,224 @@ const ParametrosTab = {
 };
 
 // ============================================================================
+// Estudos Tab (Tab 3)
+// ============================================================================
+
+const EstudosTab = {
+    estudos: [],
+    pollingTimer: null,
+
+    async init() {
+        await this.loadData();
+        this.render();
+        this.startPollingIfNeeded();
+    },
+
+    async loadData() {
+        try {
+            const data = await apiGet('/api/estudos');
+            if (data.error) {
+                toast('Erro ao carregar estudos: ' + data.error, 'error');
+                return;
+            }
+            this.estudos = Array.isArray(data) ? data : [];
+        } catch (e) {
+            toast('Erro ao carregar estudos: ' + e.message, 'error');
+        }
+    },
+
+    render() {
+        this.renderTable();
+    },
+
+    renderTable() {
+        const tbody = document.getElementById('estudos-tbody');
+        if (!tbody) return;
+
+        if (this.estudos.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-muted" style="padding:2rem">
+                        Nenhum estudo registado. Lance o primeiro estudo acima.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        let html = '';
+        this.estudos.forEach(job => {
+            const tipoBadge = job.tipo === 'otimizacao'
+                ? '<span class="badge badge-primary">Optimização</span>'
+                : '<span class="badge">Substituição</span>';
+
+            const periodo = `${job.data_inicio} → ${job.data_fim}`;
+            const statusBadge = this.renderStatusBadge(job.status);
+            const createdAt = job.created_at ? job.created_at.substring(0, 16) : '-';
+            const obs = escapeHtml(job.observacoes || '-');
+
+            const isDone = job.status === 'DONE';
+            const canCancel = job.status === 'RUNNING';
+            const canDelete = job.status === 'PENDING';
+
+            let actions = '';
+            if (isDone) {
+                actions += `<button class="btn btn-success btn-sm" onclick="EstudosTab.verResultados('${job.id}')">Ver resultados</button> `;
+            }
+            actions += `<button class="btn btn-secondary btn-sm" onclick="EstudosTab.verLog('${job.id}')">Log</button> `;
+            if (canCancel || canDelete) {
+                actions += `<button class="btn btn-danger btn-sm btn-icon" onclick="EstudosTab.cancelarOuRemover('${job.id}', '${job.status}')" title="Cancelar">×</button>`;
+            }
+
+            html += `
+                <tr data-job-id="${job.id}">
+                    <td>${tipoBadge}</td>
+                    <td><code>${escapeHtml(periodo)}</code></td>
+                    <td class="text-muted">${obs}</td>
+                    <td>${statusBadge}</td>
+                    <td>${escapeHtml(createdAt)}</td>
+                    <td class="table-actions">${actions}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html;
+    },
+
+    renderStatusBadge(status) {
+        switch (status) {
+            case 'PENDING':
+                return '<span class="badge status-pending">PENDING</span>';
+            case 'RUNNING':
+                return '<span class="badge status-running">RUNNING</span>';
+            case 'DONE':
+                return '<span class="badge status-done">DONE</span>';
+            case 'FAILED':
+                return '<span class="badge status-failed">FAILED</span>';
+            default:
+                return `<span class="badge">${escapeHtml(status)}</span>`;
+        }
+    },
+
+    startPollingIfNeeded() {
+        const hasActive = this.estudos.some(j => j.status === 'RUNNING' || j.status === 'PENDING');
+
+        if (hasActive && !this.pollingTimer) {
+            this.pollingTimer = setInterval(async () => {
+                await this.loadData();
+                this.render();
+
+                const stillActive = this.estudos.some(j => j.status === 'RUNNING' || j.status === 'PENDING');
+                if (!stillActive) {
+                    clearInterval(this.pollingTimer);
+                    this.pollingTimer = null;
+                }
+            }, 5000);
+        } else if (!hasActive && this.pollingTimer) {
+            clearInterval(this.pollingTimer);
+            this.pollingTimer = null;
+        }
+    },
+
+    async lancarEstudo() {
+        const tipo = document.querySelector('input[name="estudo-tipo"]:checked')?.value;
+        const dataInicio = document.getElementById('estudo-data-inicio')?.value;
+        const dataFim = document.getElementById('estudo-data-fim')?.value;
+        const observacoes = document.getElementById('estudo-observacoes')?.value.trim();
+        const workersN = parseInt(document.getElementById('estudo-workers')?.value || '4');
+
+        if (!tipo) { toast('Seleccione o tipo de estudo', 'warning'); return; }
+        if (!dataInicio) { toast('Seleccione a data de início', 'warning'); return; }
+        if (!dataFim) { toast('Seleccione a data de fim', 'warning'); return; }
+        if (dataFim < dataInicio) { toast('Data fim deve ser posterior à data início', 'warning'); return; }
+
+        try {
+            const result = await apiPost('/api/estudos', {
+                tipo,
+                data_inicio: dataInicio,
+                data_fim: dataFim,
+                observacoes: observacoes || '',
+                workers_n: workersN
+            });
+
+            if (result.error) {
+                toast('Erro: ' + result.error, 'error');
+                return;
+            }
+
+            toast('Estudo lançado! ID: ' + result.job_id.substring(0, 8) + '…', 'success');
+            await this.loadData();
+            this.render();
+            this.startPollingIfNeeded();
+        } catch (e) {
+            toast('Erro ao lançar estudo: ' + e.message, 'error');
+        }
+    },
+
+    async refresh() {
+        await this.loadData();
+        this.render();
+        this.startPollingIfNeeded();
+        toast('Lista actualizada', 'info');
+    },
+
+    async verLog(jobId) {
+        const modal = document.getElementById('modal-log');
+        const modalJobId = document.getElementById('modal-job-id');
+        const modalContent = document.getElementById('modal-log-content');
+
+        if (!modal || !modalContent) return;
+
+        if (modalJobId) modalJobId.textContent = jobId.substring(0, 8) + '…';
+        modalContent.textContent = 'A carregar log…';
+        modal.showModal();
+
+        try {
+            const data = await apiGet(`/api/estudos/${jobId}`);
+            if (data.error) {
+                modalContent.textContent = 'Erro: ' + data.error;
+                return;
+            }
+            const lines = data.log || [];
+            modalContent.textContent = lines.length > 0 ? lines.join('\n') : '(sem linhas de log)';
+            modalContent.scrollTop = modalContent.scrollHeight;
+        } catch (e) {
+            modalContent.textContent = 'Erro ao carregar log: ' + e.message;
+        }
+    },
+
+    verResultados(jobId) {
+        switchTab('resultados', jobId);
+    },
+
+    async cancelarOuRemover(jobId, status) {
+        const action = status === 'RUNNING' ? 'cancelar' : 'remover';
+        if (!confirm(`Confirma ${action} este estudo?`)) return;
+
+        try {
+            let result;
+            if (status === 'RUNNING') {
+                result = await apiPost(`/api/estudos/${jobId}/cancelar`, {});
+            } else {
+                result = await apiDelete(`/api/estudos/${jobId}`);
+            }
+
+            if (result?.error) {
+                toast('Erro: ' + result.error, 'error');
+                return;
+            }
+
+            toast(`Estudo ${action}do com sucesso`, 'success');
+            await this.loadData();
+            this.render();
+            this.startPollingIfNeeded();
+        } catch (e) {
+            toast('Erro: ' + e.message, 'error');
+        }
+    }
+};
+
+// ============================================================================
 // Initialize Application
 // ============================================================================
 
@@ -897,11 +1115,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Tab load events
     document.addEventListener('tabLoad', (e) => {
-        if (e.detail.tabId === 'classificacao') {
+        const { tabId, jobId } = e.detail;
+        if (tabId === 'classificacao') {
             ClassificacaoTab.init();
-        } else if (e.detail.tabId === 'parametros') {
+        } else if (tabId === 'parametros') {
             ParametrosTab.init();
+        } else if (tabId === 'estudos') {
+            EstudosTab.init();
+        } else if (tabId === 'resultados') {
+            if (jobId) {
+                window.resultadosJobId = jobId;
+                if (typeof loadResultados === 'function') {
+                    loadResultados(jobId);
+                }
+            }
         }
-        // Other tabs will be initialized in future tasks
     });
 });
