@@ -6,9 +6,20 @@
 // API Helpers
 // ============================================================================
 
+async function parseJsonResponse(response) {
+    const text = await response.text();
+    try {
+        return JSON.parse(text);
+    } catch (_) {
+        // Server returned non-JSON (PHP error page, nginx 502, etc.)
+        const preview = text.slice(0, 200).replace(/<[^>]+>/g, ' ').trim();
+        throw new Error(`Resposta inesperada do servidor (HTTP ${response.status}): ${preview}`);
+    }
+}
+
 async function apiGet(url) {
     const response = await fetch(url);
-    return response.json();
+    return parseJsonResponse(response);
 }
 
 async function apiPost(url, data) {
@@ -17,7 +28,7 @@ async function apiPost(url, data) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     });
-    return response.json();
+    return parseJsonResponse(response);
 }
 
 async function apiPut(url, data) {
@@ -26,14 +37,12 @@ async function apiPut(url, data) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     });
-    return response.json();
+    return parseJsonResponse(response);
 }
 
 async function apiDelete(url) {
-    const response = await fetch(url, {
-        method: 'DELETE'
-    });
-    return response.json();
+    const response = await fetch(url, { method: 'DELETE' });
+    return parseJsonResponse(response);
 }
 
 // ============================================================================
