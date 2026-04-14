@@ -285,6 +285,20 @@ $clickhouseTables = [
         PARTITION BY toYYYYMM(toDate(ts))
         ORDER BY (job_id, ts)
     ",
+    'unidades' => "
+        CREATE TABLE IF NOT EXISTS mibel.unidades (
+            codigo          String,
+            descricao       String,
+            agente          String,
+            tipo_unidad     String,
+            zona_frontera   String,
+            tecnologia      String,
+            regime          String,
+            categoria       String,
+            atualizado_em   DateTime DEFAULT now()
+        ) ENGINE = ReplacingMergeTree(atualizado_em)
+        ORDER BY (codigo)
+    ",
 ];
 
 if ($clickhouseOk) {
@@ -436,7 +450,7 @@ if ($clickhouseOk) {
     if ($result['success']) {
         $data = json_decode($result['response'], true);
         $tableCount = count($data['data'] ?? []);
-        printStatus($tableCount >= 4, "ClickHouse tables: {$tableCount} found");
+        printStatus($tableCount >= 5, "ClickHouse tables: {$tableCount} found");
     } else {
         printStatus(false, "Could not verify ClickHouse tables");
     }
