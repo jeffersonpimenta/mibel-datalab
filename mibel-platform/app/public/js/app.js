@@ -1097,6 +1097,314 @@ const EstudosTab = {
 };
 
 // ============================================================================
+// Resultados Tab (Tab 4)
+// ============================================================================
+
+const ResultadosTab = {
+    jobId: null,
+    pais: '',
+    chartSerie: null,
+    chartDelta: null,
+    tabelaOffset: 0,
+    tabelaTotal: 0,
+    PAGE_SIZE: 50,
+
+    load(jobId) {
+        this.jobId = jobId;
+        this.pais = '';
+        this.tabelaOffset = 0;
+
+        const paisSel = document.getElementById('res-pais-filter');
+        if (paisSel) paisSel.value = '';
+
+        const csvLink  = document.getElementById('res-export-csv');
+        const jsonLink = document.getElementById('res-export-json');
+        if (csvLink)  csvLink.href  = `/api/resultados/${jobId}/exportar?formato=csv`;
+        if (jsonLink) jsonLink.href = `/api/resultados/${jobId}/exportar?formato=json`;
+
+        document.getElementById('res-empty').hidden   = true;
+        document.getElementById('res-content').hidden = false;
+
+        this.loadStats();
+    },
+
+    async loadStats() {
+        if (!this.jobId) return;
+        try {
+            const data = await apiGet(`/api/resultados/${this.jobId}/stats`);
+            if (data.error) { toast('Erro ao carregar estatísticas: ' + data.error, 'error'); return; }
+
+            const { job, stats } = data;
+            const nPeriodos = parseInt(stats.n_periodos || 0);
+
+            // Header
+            const titulo = document.getElementById('res-titulo');
+            if (titulo) {
+                const tipo = job?.tipo === 'otimizacao' ? 'Optimização' : 'Substituição';
+                titulo.textContent = `Resultados — ${tipo}`;
+            }
+
+            const badges = document.getElementById('res-badges');
+            if (badges) {
+                const obs = job?.observacoes ? `<span class="badge">${escapeHtml(job.observacoes)}</span>` : '';
+                badges.innerHTML = `
+                    <span class="badge badge-primary">${escapeHtml(job?.data_inicio || '')} → ${escapeHtml(job?.data_fim || '')}</span>
+                    <span class="badge">${nPeriodos.toLocaleString('pt-PT')} períodos</span>
+                    ${obs}
+                `;
+            }
+
+            if (nPeriodos === 0) {
+                document.getElementById('res-no-data').hidden         = false;
+                document.getElementById('res-charts-section').hidden  = true;
+                document.getElementById('res-tabela-section').hidden  = true;
+                document.getElementById('res-stat-cards').innerHTML   = '';
+                return;
+            }
+
+            document.getElementById('res-no-data').hidden        = true;
+            document.getElementById('res-charts-section').hidden = false;
+            document.getElementById('res-tabela-section').hidden = false;
+
+            this.renderStatCards(stats);
+            await Promise.all([this.loadCharts(), this.loadTabela(0)]);
+        } catch (e) {
+            toast('Erro: ' + e.message, 'error');
+        }
+    },
+
+    renderStatCards(stats) {
+        const container = document.getElementById('res-stat-cards');
+        if (!container) return;
+
+        const delta = parseFloat(stats.delta_medio || 0);
+        const deltaClass = delta < 0 ? 'negative' : (delta > 0 ? 'positive' : '');
+
+        container.innerHTML = `
+            <div class="stat-card">
+                <div class="stat-card-label">Preço médio original</div>
+                <div class="stat-card-value">${this.fmtNum(stats.preco_orig_medio, 2)}</div>
+                <div class="stat-card-unit">€/MWh</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-label">Preço médio simulado</div>
+                <div class="stat-card-value">${this.fmtNum(stats.preco_sub_medio, 2)}</div>
+                <div class="stat-card-unit">€/MWh</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-label">Delta médio</div>
+                <div class="stat-card-value ${deltaClass}">${delta >= 0 ? '+' : ''}${this.fmtNum(stats.delta_medio, 2)}</div>
+                <div class="stat-card-unit">€/MWh · min ${this.fmtNum(stats.delta_min, 2)} / max ${this.fmtNum(stats.delta_max, 2)}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-label">Bids substituídos</div>
+                <div class="stat-card-value">${this.fmtNum(stats.total_bids_sub, 0)}</div>
+                <div class="stat-card-unit">total</div>
+            </div>
+        `;
+    },
+
+    async loadCharts() {
+        if (!this.jobId) return;
+        try {
+            const paisParam = this.pais ? `?pais=${this.pais}` : '';
+            const data = await apiGet(`/api/resultados/${this.jobId}/serie${paisParam}`);
+            if (data.error) return;
+            this.renderChartSerie(data);
+            this.renderChartDelta(data);
+        } catch (e) {
+            toast('Erro ao carregar gráficos: ' + e.message, 'error');
+        }
+    },
+
+    renderChartSerie(data) {
+        let labels = data.labels    || [];
+        let orig   = data.preco_orig || [];
+        let sub    = data.preco_sub  || [];
+
+        // Subsample to ≤ 500 points for performance
+        if (labels.length > 500) {
+            const step = Math.ceil(labels.length / 500);
+            labels = labels.filter((_, i) => i % step === 0);
+            orig   = orig.filter((_, i)   => i % step === 0);
+            sub    = sub.filter((_, i)    => i % step === 0);
+        }
+
+        if (this.chartSerie) { this.chartSerie.destroy(); this.chartSerie = null; }
+
+        const ctx = document.getElementById('chart-serie');
+        if (!ctx) return;
+
+        this.chartSerie = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Original', data: orig, borderColor: '#2563eb', backgroundColor: 'transparent', tension: 0.1, pointRadius: 0, borderWidth: 1.5 },
+                    { label: 'Simulado', data: sub,  borderColor: '#ea580c', backgroundColor: 'transparent', tension: 0.1, pointRadius: 0, borderWidth: 1.5 },
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'top' } },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 20 } },
+                    y: { title: { display: true, text: '€/MWh' } }
+                }
+            }
+        });
+    },
+
+    renderChartDelta(data) {
+        const deltas   = data.delta    || [];
+        const horaNums = data.hora_num || [];
+
+        // Aggregate by hora_num (1–24): compute mean delta per hour
+        const sums   = Array(24).fill(0);
+        const counts = Array(24).fill(0);
+        deltas.forEach((d, i) => {
+            const h = parseInt(horaNums[i] || 0);
+            if (h >= 1 && h <= 24) {
+                sums[h - 1]   += parseFloat(d || 0);
+                counts[h - 1] += 1;
+            }
+        });
+        const deltasPorHora = sums.map((s, i) => counts[i] > 0 ? s / counts[i] : null);
+        const bgColors = deltasPorHora.map(v => v === null ? '#94a3b8' : (v < 0 ? '#16a34a' : '#dc2626'));
+
+        if (this.chartDelta) { this.chartDelta.destroy(); this.chartDelta = null; }
+
+        const ctx2 = document.getElementById('chart-delta');
+        if (!ctx2) return;
+
+        this.chartDelta = new Chart(ctx2, {
+            type: 'bar',
+            data: {
+                labels: Array.from({ length: 24 }, (_, i) => `H${i + 1}`),
+                datasets: [{
+                    label: 'Delta médio (€/MWh)',
+                    data: deltasPorHora,
+                    backgroundColor: bgColors,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { title: { display: true, text: '€/MWh' } }
+                }
+            }
+        });
+    },
+
+    async loadTabela(offset = 0) {
+        if (!this.jobId) return;
+        this.tabelaOffset = offset;
+
+        const tbody = document.getElementById('res-tabela-tbody');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="9" class="loading"><span class="spinner"></span> A carregar...</td></tr>';
+        }
+
+        try {
+            const paisParam = this.pais ? `&pais=${this.pais}` : '';
+            const data = await apiGet(`/api/resultados/${this.jobId}/tabela?limit=${this.PAGE_SIZE}&offset=${offset}${paisParam}`);
+            if (data.error) { toast('Erro na tabela: ' + data.error, 'error'); return; }
+
+            this.tabelaTotal = parseInt(data.total || 0);
+            this.renderTabelaRows(data.rows || []);
+            this.updatePaginacao();
+        } catch (e) {
+            toast('Erro: ' + e.message, 'error');
+        }
+    },
+
+    renderTabelaRows(rows) {
+        const tbody = document.getElementById('res-tabela-tbody');
+        if (!tbody) return;
+
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted" style="padding:2rem">Sem dados</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = rows.map(r => {
+            const delta = parseFloat(r.delta_preco || 0);
+            const dStyle = delta < 0
+                ? 'color:#16a34a;font-weight:600'
+                : (delta > 0 ? 'color:#dc2626;font-weight:600' : '');
+            const dStr = (delta >= 0 ? '+' : '') + this.fmtNum(delta, 2);
+
+            return `<tr>
+                <td>${escapeHtml(r.data || '')}</td>
+                <td>${escapeHtml(r.hora_raw || String(r.hora_num || ''))}</td>
+                <td>${escapeHtml(r.pais || '')}</td>
+                <td class="text-right">${this.fmtNum(r.preco_clearing_orig, 2)}</td>
+                <td class="text-right">${this.fmtNum(r.preco_clearing_sub, 2)}</td>
+                <td class="text-right" style="${dStyle}">${dStr}</td>
+                <td class="text-right">${this.fmtVol(r.volume_clearing_orig)}</td>
+                <td class="text-right">${this.fmtVol(r.volume_clearing_sub)}</td>
+                <td class="text-right">${r.n_bids_substituidos ?? 0}</td>
+            </tr>`;
+        }).join('');
+    },
+
+    updatePaginacao() {
+        const info    = document.getElementById('res-tabela-info');
+        const btnPrev = document.getElementById('res-btn-prev');
+        const btnNext = document.getElementById('res-btn-next');
+
+        const from = this.tabelaTotal === 0 ? 0 : this.tabelaOffset + 1;
+        const to   = Math.min(this.tabelaOffset + this.PAGE_SIZE, this.tabelaTotal);
+
+        if (info)    info.textContent  = `${from}–${to} de ${this.tabelaTotal.toLocaleString('pt-PT')}`;
+        if (btnPrev) btnPrev.disabled  = this.tabelaOffset === 0;
+        if (btnNext) btnNext.disabled  = (this.tabelaOffset + this.PAGE_SIZE) >= this.tabelaTotal;
+    },
+
+    prevPage() {
+        if (this.tabelaOffset === 0) return;
+        this.loadTabela(Math.max(0, this.tabelaOffset - this.PAGE_SIZE));
+    },
+
+    nextPage() {
+        if ((this.tabelaOffset + this.PAGE_SIZE) >= this.tabelaTotal) return;
+        this.loadTabela(this.tabelaOffset + this.PAGE_SIZE);
+    },
+
+    async setPais(pais) {
+        this.pais = pais;
+        this.tabelaOffset = 0;
+        await Promise.all([this.loadCharts(), this.loadTabela(0)]);
+    },
+
+    fmtNum(v, decimals = 2) {
+        const n = parseFloat(v);
+        if (isNaN(n)) return '—';
+        return n.toLocaleString('pt-PT', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+        });
+    },
+
+    fmtVol(v) {
+        const n = parseFloat(v);
+        if (isNaN(n)) return '—';
+        return n.toLocaleString('pt-PT', {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+        });
+    },
+};
+
+/**
+ * Entry point called by switchTab('resultados', jobId) from EstudosTab
+ */
+function loadResultados(jobId) {
+    ResultadosTab.load(jobId);
+}
+
+// ============================================================================
 // Initialize Application
 // ============================================================================
 
@@ -1123,11 +1431,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (tabId === 'estudos') {
             EstudosTab.init();
         } else if (tabId === 'resultados') {
-            if (jobId) {
-                window.resultadosJobId = jobId;
-                if (typeof loadResultados === 'function') {
-                    loadResultados(jobId);
-                }
+            const id = jobId || window.resultadosJobId;
+            if (id) {
+                window.resultadosJobId = id;
+                ResultadosTab.load(id);
             }
         }
     });
