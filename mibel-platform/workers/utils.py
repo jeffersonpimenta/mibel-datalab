@@ -125,6 +125,30 @@ def carrega_mapa_unidades() -> dict:
 
     return {'mapa_tec': mapa_tec, 'excecoes': excecoes_map}
 
+
+def carrega_mapa_unidades_ch(ch: Client) -> dict:
+    """
+    Carrega o mapeamento de classificação de unidades directamente da tabela
+    mibel.unidades (populada por scripts/unidades/carrega_unidades_ch.py).
+
+    Devolve {CODIGO_UPPER: (regime, categoria_zona)} para todas as unidades
+    classificadas (exclui regime OUTRO / NAO_CLASSIFICADO).
+
+    Esta função substitui o par classificacao.json + excecoes.json como fonte
+    de verdade para a classificação das unidades nos ficheiros de bids.
+    A zona já está embutida na categoria (ex: SOLAR_FOT_ES, EOLICA_PT), logo
+    não é necessário inferir o sufixo a partir do campo Pais do bid.
+    """
+    rows = ch.execute(
+        "SELECT codigo, regime, categoria "
+        "FROM mibel.unidades FINAL "
+        "WHERE regime NOT IN ('OUTRO') AND categoria NOT IN ('NAO_CLASSIFICADO')"
+    )
+    return {
+        str(codigo).strip().upper(): (str(regime).strip(), str(categoria).strip())
+        for codigo, regime, categoria in rows
+    }
+
 # ============================================================================
 # Logging
 # ============================================================================
