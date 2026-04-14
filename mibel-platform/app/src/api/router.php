@@ -232,6 +232,25 @@ try {
     }
 
     // -------------------------------------------------------------------------
+    // Ingestão Routes
+    // -------------------------------------------------------------------------
+
+    if ($path === '/ingestao' && $method === 'GET') {
+        require_once __DIR__ . '/ingestao.php';
+        index();
+    }
+
+    if ($path === '/ingestao' && $method === 'POST') {
+        require_once __DIR__ . '/ingestao.php';
+        store();
+    }
+
+    if (preg_match('#^/ingestao/([^/]+\.zip)$#', $path, $matches) && $method === 'DELETE') {
+        require_once __DIR__ . '/ingestao.php';
+        destroy($matches[1]);
+    }
+
+    // -------------------------------------------------------------------------
     // 404 - Route Not Found
     // -------------------------------------------------------------------------
 
