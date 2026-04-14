@@ -67,3 +67,19 @@ CREATE TABLE IF NOT EXISTS mibel.worker_logs (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(toDate(ts))
 ORDER BY (job_id, ts);
+
+-- Unit classification mapping loaded from LISTA_UNIDADES.csv (OMIE)
+-- Populated by scripts/unidades/carrega_unidades_ch.py
+-- Used by substituicao_worker.py to classify bid units by CODIGO
+CREATE TABLE IF NOT EXISTS mibel.unidades (
+    codigo          String,
+    descricao       String,
+    agente          String,
+    tipo_unidad     String,
+    zona_frontera   String,
+    tecnologia      String,
+    regime          String,   -- PRE, PRO, CONSUMO, COMERCIALIZADOR, GENERICA, PORFOLIO, OUTRO
+    categoria       String,   -- ex: SOLAR_FOT_ES, EOLICA_PT, CICLO_COMBINADO_ES
+    atualizado_em   DateTime DEFAULT now()
+) ENGINE = ReplacingMergeTree(atualizado_em)
+ORDER BY (codigo);
