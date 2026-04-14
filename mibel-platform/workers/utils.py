@@ -256,19 +256,51 @@ def get_categoria_zona(
 # File Discovery
 # ============================================================================
 
+def extrai_periodo_zip(nome_ficheiro: str) -> tuple[date, date]:
+    """
+    Extrai o período (data_inicio, data_fim) coberto por um ficheiro ZIP.
+
+    Suporta dois formatos de nome:
+      • YYYYMMDD  (ficheiro diário)  → período de 1 dia
+      • YYYYMM    (ficheiro mensal)  → 1º ao último dia do mês
+
+    Devolve (date(1970,1,1), date(1970,1,1)) quando o padrão não é reconhecido.
+    """
+    import calendar
+
+    # 8 dígitos: YYYYMMDD
+    m = re.search(r'(\d{8})', nome_ficheiro)
+    if m:
+        d_str = m.group(1)
+        try:
+            d = date(int(d_str[:4]), int(d_str[4:6]), int(d_str[6:8]))
+            return d, d
+        except ValueError:
+            pass
+
+    # 6 dígitos: YYYYMM
+    m = re.search(r'(\d{6})', nome_ficheiro)
+    if m:
+        ym = m.group(1)
+        try:
+            year, month = int(ym[:4]), int(ym[4:6])
+            last_day = calendar.monthrange(year, month)[1]
+            return date(year, month, 1), date(year, month, last_day)
+        except ValueError:
+            pass
+
+    fallback = date(1970, 1, 1)
+    return fallback, fallback
+
+
 def zip_files_no_intervalo(data_inicio: str, data_fim: str) -> list:
     """
-    List ZIP files in /data/bids/ within date range.
+    Lista ZIPs em /data/bids/ cujo período tem sobreposição com [data_inicio, data_fim].
 
-    Args:
-        data_inicio: Start date (YYYY-MM-DD)
-        data_fim: End date (YYYY-MM-DD)
-
-    Returns:
-        Sorted list of full paths to matching ZIP files
+    Suporta ficheiros diários (YYYYMMDD) e mensais (YYYYMM).
     """
     inicio = date.fromisoformat(data_inicio)
-    fim = date.fromisoformat(data_fim)
+    fim    = date.fromisoformat(data_fim)
 
     result = []
     patterns = [
@@ -279,13 +311,13 @@ def zip_files_no_intervalo(data_inicio: str, data_fim: str) -> list:
     for pattern in patterns:
         for path in glob.glob(pattern):
             nome = os.path.basename(path)
-            data_str = extrai_data(nome)
+            file_ini, file_fim = extrai_periodo_zip(nome)
 
-            if data_str == '1970-01-01':
-                continue
+            if file_ini == date(1970, 1, 1):
+                continue  # nome não reconhecido
 
-            d = date.fromisoformat(data_str)
-            if inicio <= d <= fim:
+            # Sobreposição: os intervalos [inicio,fim] e [file_ini,file_fim] intersectam
+            if file_ini <= fim and file_fim >= inicio:
                 result.append(path)
 
     return sorted(set(result))
