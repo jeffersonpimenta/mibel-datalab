@@ -1445,6 +1445,285 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.resultadosJobId = id;
                 ResultadosTab.load(id);
             }
+        } else if (tabId === 'ingestao') {
+            IngestaoTab.init();
         }
     });
 });
+
+// ============================================================================
+// Ingestão de Dados Tab (Tab 5)
+// ============================================================================
+
+const IngestaoTab = {
+    queue: [],   // [{ file, status, error }]  status: waiting|uploading|done|error|invalid
+
+    // ------------------------------------------------------------------
+    // Initialisation
+    // ------------------------------------------------------------------
+    init() {
+        this._bindDropzone();
+        this.loadFiles();
+    },
+
+    // ------------------------------------------------------------------
+    // Drag-and-drop + file input
+    // ------------------------------------------------------------------
+    _bindDropzone() {
+        const zone  = document.getElementById('ingestao-dropzone');
+        const input = document.getElementById('ingestao-file-input');
+        if (!zone || zone._bound) return;
+        zone._bound = true;
+
+        // Click anywhere on the zone to open the file picker
+        zone.addEventListener('click', (e) => {
+            if (e.target.tagName !== 'LABEL') input.click();
+        });
+        input.addEventListener('change', () => {
+            this._enqueue([...input.files]);
+            input.value = '';
+        });
+
+        // Drag events
+        zone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            zone.classList.add('drag-over');
+        });
+        ['dragleave', 'dragend'].forEach(evt =>
+            zone.addEventListener(evt, () => zone.classList.remove('drag-over'))
+        );
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zone.classList.remove('drag-over');
+            const files = [...(e.dataTransfer.files || [])].filter(f => f.name.endsWith('.zip'));
+            if (files.length === 0) {
+                toast('Apenas ficheiros .zip são aceites.', 'warning');
+                return;
+            }
+            this._enqueue(files);
+        });
+    },
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+    _formatBytes(bytes) {
+        if (bytes < 1024)        return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    },
+
+    _parseMonth(filename) {
+        const m = filename.match(/curva_pbc_uof_(\d{4})(\d{2})\.zip$/);
+        if (!m) return filename;
+        const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        return months[parseInt(m[2], 10) - 1] + ' ' + m[1];
+    },
+
+    _isValidName(name) {
+        return /^curva_pbc_uof_\d{6}\.zip$/.test(name);
+    },
+
+    // ------------------------------------------------------------------
+    // Queue management
+    // ------------------------------------------------------------------
+    _enqueue(files) {
+        const PATTERN = /^curva_pbc_uof_\d{6}\.zip$/;
+        for (const f of files) {
+            const valid = PATTERN.test(f.name);
+            this.queue.push({
+                file:   f,
+                status: valid ? 'waiting' : 'invalid',
+                error:  valid ? null : `Nome inválido: "${f.name}". Esperado: curva_pbc_uof_YYYYMM.zip`,
+            });
+        }
+        this._renderQueue();
+        this._processQueue();
+    },
+
+    clearQueue() {
+        this.queue = this.queue.filter(i => i.status === 'uploading');
+        this._renderQueue();
+    },
+
+    // ------------------------------------------------------------------
+    // Upload processing (serial to avoid saturating PHP)
+    // ------------------------------------------------------------------
+    _uploading: false,
+
+    async _processQueue() {
+        if (this._uploading) return;
+        const next = this.queue.find(i => i.status === 'waiting');
+        if (!next) return;
+
+        this._uploading = true;
+        next.status = 'uploading';
+        this._renderQueue();
+
+        try {
+            const fd = new FormData();
+            fd.append('file', next.file);
+
+            const xhr = new XMLHttpRequest();
+            // Track upload progress
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    next.progress = Math.round((e.loaded / e.total) * 100);
+                    this._renderQueue();
+                }
+            };
+
+            await new Promise((resolve, reject) => {
+                xhr.open('POST', '/api/ingestao');
+                xhr.onload = () => {
+                    let json;
+                    try { json = JSON.parse(xhr.responseText); } catch (_) { json = {}; }
+                    if (xhr.status === 201) {
+                        next.status    = 'done';
+                        next.overwrite = json.overwrite;
+                        resolve();
+                    } else {
+                        next.status = 'error';
+                        next.error  = json.error || `HTTP ${xhr.status}`;
+                        resolve();
+                    }
+                };
+                xhr.onerror = () => {
+                    next.status = 'error';
+                    next.error  = 'Erro de rede.';
+                    resolve();
+                };
+                xhr.send(fd);
+            });
+        } catch (err) {
+            next.status = 'error';
+            next.error  = err.message;
+        }
+
+        this._uploading = false;
+        this._renderQueue();
+
+        if (next.status === 'done') {
+            this.loadFiles();
+        }
+
+        // Continue with remaining items
+        this._processQueue();
+    },
+
+    // ------------------------------------------------------------------
+    // Render upload queue
+    // ------------------------------------------------------------------
+    _renderQueue() {
+        const card = document.getElementById('ingestao-queue-card');
+        const list = document.getElementById('ingestao-queue-list');
+        if (!card || !list) return;
+
+        if (this.queue.length === 0) {
+            card.style.display = 'none';
+            return;
+        }
+        card.style.display = '';
+
+        list.innerHTML = this.queue.map((item, idx) => {
+            const sizeStr = this._formatBytes(item.file.size);
+            let statusHtml = '';
+            switch (item.status) {
+                case 'waiting':
+                    statusHtml = `<span class="iq-status-waiting">A aguardar</span>`;
+                    break;
+                case 'uploading': {
+                    const pct = item.progress ?? 0;
+                    statusHtml = `
+                        <div style="flex:1;min-width:120px">
+                            <div class="flex items-center gap-1">
+                                <span class="spinner"></span>
+                                <span class="iq-status-uploading">A enviar... ${pct}%</span>
+                            </div>
+                            <div class="ingestao-progress">
+                                <div class="ingestao-progress-bar" style="width:${pct}%"></div>
+                            </div>
+                        </div>`;
+                    break;
+                }
+                case 'done':
+                    statusHtml = `<span class="iq-status-done">${item.overwrite ? 'Substituído' : 'Carregado'}</span>`;
+                    break;
+                case 'error':
+                    statusHtml = `<span class="iq-status-error" title="${escapeHtml(item.error || '')}">Erro</span>`;
+                    break;
+                case 'invalid':
+                    statusHtml = `<span class="iq-status-invalid" title="${escapeHtml(item.error || '')}">Inválido</span>`;
+                    break;
+            }
+
+            return `
+                <div class="ingestao-queue-item">
+                    <span class="ingestao-queue-name">${escapeHtml(item.file.name)}</span>
+                    <span class="ingestao-queue-size">${sizeStr}</span>
+                    <span class="ingestao-queue-status">${statusHtml}</span>
+                </div>`;
+        }).join('');
+    },
+
+    // ------------------------------------------------------------------
+    // Files list
+    // ------------------------------------------------------------------
+    async loadFiles() {
+        const tbody   = document.getElementById('ingestao-files-tbody');
+        const counter = document.getElementById('ingestao-counter');
+        if (!tbody) return;
+
+        try {
+            const data = await apiGet('/api/ingestao');
+            const files = data.files || [];
+
+            if (counter) counter.textContent = `${files.length} ficheiro(s) em disco`;
+
+            if (files.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted" style="padding:2rem">
+                    Nenhum ficheiro em /data/bids
+                </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = files.map(f => {
+                const month = this._parseMonth(f.name);
+                const mod   = new Date(f.modified).toLocaleString('pt-PT');
+                return `
+                    <tr>
+                        <td><code style="font-size:0.8125rem">${escapeHtml(f.name)}</code></td>
+                        <td>${escapeHtml(month)}</td>
+                        <td class="text-right">${this._formatBytes(f.size)}</td>
+                        <td>${escapeHtml(mod)}</td>
+                        <td class="table-actions">
+                            <button class="btn btn-danger btn-sm"
+                                onclick="IngestaoTab.deleteFile('${escapeHtml(f.name)}')">
+                                Eliminar
+                            </button>
+                        </td>
+                    </tr>`;
+            }).join('');
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-muted" style="padding:1rem">
+                Erro ao carregar lista: ${escapeHtml(e.message)}
+            </td></tr>`;
+            if (counter) counter.textContent = 'Erro';
+        }
+    },
+
+    async deleteFile(filename) {
+        if (!confirm(`Eliminar permanentemente "${filename}"?`)) return;
+        try {
+            const data = await apiDelete(`/api/ingestao/${encodeURIComponent(filename)}`);
+            if (data.success) {
+                toast(`"${filename}" eliminado.`, 'success');
+                this.loadFiles();
+            } else {
+                toast(data.error || 'Erro ao eliminar.', 'error');
+            }
+        } catch (e) {
+            toast('Erro: ' + e.message, 'error');
+        }
+    },
+};
