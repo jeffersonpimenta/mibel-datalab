@@ -38,14 +38,23 @@ def get_ch() -> Client:
 
 
 def ch_insert_batch(ch: Client, table: str, rows: list, batch_size: int = 5000) -> int:
-    """Insert rows in batches. Returns total inserted count."""
+    """
+    Insert rows in batches. Returns total inserted count.
+
+    Builds the column list from the first row's keys so that columns with
+    DEFAULT values (e.g. created_at) are omitted from the INSERT and
+    ClickHouse fills them automatically.
+    """
     if not rows:
         return 0
+
+    columns = list(rows[0].keys())
+    sql = f'INSERT INTO {table} ({", ".join(columns)}) VALUES'
 
     total = 0
     for i in range(0, len(rows), batch_size):
         batch = rows[i:i + batch_size]
-        ch.execute(f'INSERT INTO {table} VALUES', batch)
+        ch.execute(sql, batch)
         total += len(batch)
 
     return total
