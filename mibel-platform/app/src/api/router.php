@@ -251,6 +251,55 @@ try {
     }
 
     // -------------------------------------------------------------------------
+    // Explorador Routes
+    // -------------------------------------------------------------------------
+
+    if ($path === '/explorador/overview' && $method === 'GET') {
+        require_once __DIR__ . '/explorador.php';
+        overview();
+    }
+
+    if ($path === '/explorador/distribuicao' && $method === 'GET') {
+        require_once __DIR__ . '/explorador.php';
+        distribuicao();
+    }
+
+    if ($path === '/explorador/histograma' && $method === 'GET') {
+        require_once __DIR__ . '/explorador.php';
+        histograma();
+    }
+
+    if ($path === '/explorador/perfil-horario' && $method === 'GET') {
+        require_once __DIR__ . '/explorador.php';
+        perfil_horario();
+    }
+
+    if ($path === '/explorador/top-unidades' && $method === 'GET') {
+        require_once __DIR__ . '/explorador.php';
+        top_unidades();
+    }
+
+    if ($path === '/explorador/categorias' && $method === 'GET') {
+        require_once __DIR__ . '/explorador.php';
+        categorias();
+    }
+
+    if ($path === '/explorador/tendencia-mensal' && $method === 'GET') {
+        require_once __DIR__ . '/explorador.php';
+        tendencia_mensal();
+    }
+
+    if ($path === '/explorador/dispersao' && $method === 'GET') {
+        require_once __DIR__ . '/explorador.php';
+        dispersao();
+    }
+
+    if ($path === '/explorador/query' && $method === 'POST') {
+        require_once __DIR__ . '/explorador.php';
+        query_custom();
+    }
+
+    // -------------------------------------------------------------------------
     // 404 - Route Not Found
     // -------------------------------------------------------------------------
 
