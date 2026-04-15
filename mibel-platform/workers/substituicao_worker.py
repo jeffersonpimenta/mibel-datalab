@@ -36,14 +36,11 @@ Uso:
 
 import argparse
 import os
-import re
 import sys
 import threading
 import traceback
-import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
-from io import StringIO
 from typing import Optional
 
 import pandas as pd
@@ -57,7 +54,8 @@ from utils import (
     get_ch, ch_insert_batch,
     carrega_escaloes,
     carrega_mapa_unidades_ch,
-    zip_files_no_intervalo, extrai_data, extrai_periodo_zip, normaliza_hora,
+    normaliza_hora,
+    extrai_data,
     ensure_output_dir,
 )
 
@@ -91,38 +89,6 @@ def log(nivel: str, mensagem: str, job_id: str = '', ch=None) -> None:
         except Exception:
             pass  # falha silenciosa — o log em stdout é suficiente
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  MAPEAMENTO DE COLUNAS DOS FICHEIROS DE BIDS
-# ══════════════════════════════════════════════════════════════════════════════
-
-MAPA_COLUNAS: dict[str, str] = {
-    # Energia
-    'Energía Compra/Venta': 'Energia',
-    'Energia Compra/Venta': 'Energia',
-    'Potencia Compra/Venta': 'Energia',
-    'Potencia':              'Energia',
-    'Energia':               'Energia',
-    # Preço
-    'Precio Compra/Venta':   'Precio',
-    'Precio':                'Precio',
-    # Hora
-    'Hora':                  'Hora',
-    'Periodo':               'Hora',
-    # País
-    'Pais':                  'Pais',
-    'País':                  'Pais',
-    # Tipo oferta e unidade
-    'Tipo Oferta':           'Tipo Oferta',
-    'Unidad':                'Unidad',
-    # Tecnologia / Tipo de unidade (usado para classificação)
-    'Tipo Unidad':           'TIPO_UNIDAD',
-    'TipoUnidad':            'TIPO_UNIDAD',
-    'Tecnología':            'TIPO_UNIDAD',
-    'Tecnologia':            'TIPO_UNIDAD',
-}
-
-COLUNAS_OBRIGATORIAS = ('Hora', 'Pais', 'Tipo Oferta', 'Unidad', 'Energia', 'Precio')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -425,71 +391,71 @@ def _processa_hora_pais(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  NÍVEL 2 — PROCESSAMENTO DE UM FICHEIRO CSV INTERNO AO ZIP
+#  NÍVEL 2 — PROCESSAMENTO DE UMA DATA A PARTIR DO CLICKHOUSE
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _processa_internal_file(
-    zip_path: str,
-    internal_file: str,
+def _processa_data_ch(
+    data_str: str,
     mapa_unidades_ch: dict,
     escaloes: dict,
     workers_hora_pais: int,
     job_id: str,
-    ch,
+    ch,       # None quando chamado a partir de thread filho
 ) -> tuple[list, list]:
     """
-    Nível 2 — lê um CSV de dentro do ZIP, constrói o mapa de unidades
-    específico para esse ficheiro, e paraleliza o clearing por (Hora, Pais).
+    Nível 2 — carrega todos os bids de uma data a partir de mibel.bids_raw e
+    paraleliza o clearing por (Hora, Pais).
 
-    Devolve (rows, logs) onde:
-      rows — lista de dicts prontos para inserção em clearing_substituicao
-      logs — lista de dicts para clearing_substituicao_logs
+    Cada thread cria a sua própria ligação ao ClickHouse para a leitura,
+    evitando contenção sobre a ligação da thread pai.
+
+    Devolve (rows, logs) prontos para inserção em clearing_substituicao.
     """
-    zip_nome = os.path.basename(zip_path)
-    log('CSV', f'{zip_nome} → {internal_file}', job_id, ch)
+    # Nome sintético compatível com extrai_data() — 8 dígitos contíguos
+    internal_file = f'bids_{data_str.replace("-", "")}'
+    log('INFO', f'A carregar data {data_str} de mibel.bids_raw…', job_id, ch)
 
-    # ── Leitura do CSV ───────────────────────────────────────────────────────
+    # ── Carregar bids do ClickHouse ──────────────────────────────────────────
+    ch_local = get_ch()
     try:
-        with zipfile.ZipFile(zip_path, 'r') as z:
-            with z.open(internal_file) as f:
-                content = f.read().decode('latin-1')
-
-        df = pd.read_csv(StringIO(content), sep=';', dtype=str, skiprows=2)
-        df.columns = [c.strip() for c in df.columns]
-        df = df.rename(columns=MAPA_COLUNAS)
-        df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')
-
-    except Exception as e:
-        log('ERRO', f'{internal_file}: falha na leitura — {e}', job_id, ch)
-        return [], []
-
-    # Verificar colunas obrigatórias
-    faltam = [c for c in COLUNAS_OBRIGATORIAS if c not in df.columns]
-    if faltam:
-        log('AVISO', f'{internal_file}: colunas em falta {faltam} — ignorado', job_id, ch)
-        return [], []
-
-    # Converter Energia e Precio (formato ibérico: ponto=milhar, vírgula=decimal)
-    for col in ('Energia', 'Precio'):
-        df[col] = (
-            df[col]
-            .astype(str)
-            .str.replace('.', '', regex=False)
-            .str.replace(',', '.', regex=False)
-            .apply(pd.to_numeric, errors='coerce')
-            .fillna(0.0)
+        rows_ch, cols_meta = ch_local.execute(
+            """
+            SELECT
+                hora_raw        AS Hora,
+                pais            AS Pais,
+                tipo_oferta     AS `Tipo Oferta`,
+                unidade         AS Unidad,
+                energia         AS Energia,
+                precio          AS Precio
+            FROM mibel.bids_raw
+            WHERE data_ficheiro = toDate(%(data)s)
+            """,
+            {'data': data_str},
+            with_column_types=True,
         )
+    finally:
+        try:
+            ch_local.disconnect()
+        except Exception:
+            pass
+
+    if not rows_ch:
+        log('AVISO', f'{data_str}: sem dados em mibel.bids_raw', job_id, ch)
+        return [], []
+
+    col_names = [c[0] for c in cols_meta]
+    df = pd.DataFrame(rows_ch, columns=col_names)
 
     n_rows  = len(df)
     n_units = df['Unidad'].nunique()
     paises  = sorted(df['Pais'].unique().tolist())
     horas   = sorted(df['Hora'].unique().tolist())
     log('INFO',
-        f'{internal_file}: {n_rows} bids | {n_units} unidades | '
+        f'{data_str}: {n_rows} bids | {n_units} unidades | '
         f'países={paises} | horas {horas[0]}–{horas[-1]}',
         job_id, ch)
 
-    # ── Construção do mapa de unidades ──────────────────────────────────────
+    # ── Construção do mapa de unidades para esta data ────────────────────────
     mapa_unidades = build_mapa_unidades(df, mapa_unidades_ch, escaloes)
 
     contagem_regime: dict[str, int] = {}
@@ -498,12 +464,12 @@ def _processa_internal_file(
 
     resumo_reg = '  '.join(f'{r}={n}' for r, n in sorted(contagem_regime.items()))
     log('INFO',
-        f'{internal_file}: {len(mapa_unidades)} unidades classificadas  |  {resumo_reg}',
+        f'{data_str}: {len(mapa_unidades)} unidades classificadas  |  {resumo_reg}',
         job_id, ch)
 
     n_sem = n_units - len(mapa_unidades)
     if n_sem:
-        log('AVISO', f'{internal_file}: {n_sem} unidades sem classificação (serão ignoradas)', job_id, ch)
+        log('AVISO', f'{data_str}: {n_sem} unidades sem classificação (serão ignoradas)', job_id, ch)
 
     # ── Volumes diários (para perfil_hora) ──────────────────────────────────
     volumes_diarios = calcula_volumes_diarios(df, mapa_unidades, escaloes)
@@ -514,12 +480,12 @@ def _processa_internal_file(
         for h in sorted(df['Hora'].unique())
         for p in sorted(df[df['Hora'] == h]['Pais'].unique())
     ]
-    log('INFO', f'{internal_file}: {len(combinacoes)} combinações (Hora × País)', job_id, ch)
+    log('INFO', f'{data_str}: {len(combinacoes)} combinações (Hora × País)', job_id, ch)
 
     rows: list = []
     logs: list = []
 
-    # ── Paralelismo nível-3 ──────────────────────────────────────────────────
+    # ── Paralelismo por (Hora, Pais) ─────────────────────────────────────────
     with ThreadPoolExecutor(max_workers=workers_hora_pais) as ex:
         futures = {
             ex.submit(
@@ -535,27 +501,24 @@ def _processa_internal_file(
                 row, log_este = fut.result()
                 if row is not None:
                     rows.append(row)
-                    # Log por período com delta %
-                    po = row['preco_clearing_orig']
-                    ps = row['preco_clearing_sub']
+                    po    = row['preco_clearing_orig']
+                    ps    = row['preco_clearing_sub']
                     delta = row['delta_preco']
                     if po and ps:
                         pct = ((ps / po) - 1) * 100 if po else 0
                         log('OK',
-                            f'{internal_file}|H{h}|{p} '
+                            f'{data_str}|H{h}|{p} '
                             f'orig={po:.4f} sub={ps:.4f} '
                             f'Δ={delta:+.4f} ({pct:+.2f}%) '
                             f'bids_sub={row["n_bids_substituidos"]}',
                             job_id)
                     else:
-                        log('OK',
-                            f'{internal_file}|H{h}|{p} orig={po} sub={ps}',
-                            job_id)
+                        log('OK', f'{data_str}|H{h}|{p} orig={po} sub={ps}', job_id)
                 logs.extend(log_este)
             except Exception as e:
-                log('ERRO', f'{internal_file}|H{h}|{p}: {e}', job_id, ch)
+                log('ERRO', f'{data_str}|H{h}|{p}: {e}', job_id, ch)
 
-    # Resumo do ficheiro
+    # Resumo da data
     if rows:
         precos_o = [r['preco_clearing_orig'] for r in rows if r['preco_clearing_orig'] is not None]
         precos_s = [r['preco_clearing_sub']  for r in rows if r['preco_clearing_sub']  is not None]
@@ -564,106 +527,14 @@ def _processa_internal_file(
         avg_s    = sum(precos_s) / len(precos_s) if precos_s else None
         avg_d    = sum(deltas)   / len(deltas)   if deltas   else None
         log('INFO',
-            f'{internal_file}: concluído — '
+            f'{data_str}: concluído — '
             f'{len(rows)} períodos | {sum(r["n_bids_substituidos"] for r in rows)} bids sub. | '
             f'avg_orig={avg_o:.4f} avg_sub={avg_s:.4f} avg_Δ={avg_d:+.4f}',
             job_id, ch)
     else:
-        log('AVISO', f'{internal_file}: sem resultados de clearing', job_id, ch)
+        log('AVISO', f'{data_str}: sem resultados de clearing', job_id, ch)
 
     return rows, logs
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  NÍVEL 1 — PROCESSAMENTO DE UM ZIP COMPLETO
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _processa_zip(
-    zip_path: str,
-    mapa_unidades_ch: dict,
-    escaloes: dict,
-    workers_interno: int,
-    workers_hora_pais: int,
-    job_id: str,
-    ch,
-    data_inicio: str = '',
-    data_fim: str = '',
-) -> tuple[list, list]:
-    """
-    Nível 1 — abre um ZIP, lista os seus ficheiros CSV internos e paraleliza
-    o processamento com um sub-pool de threads.
-
-    Quando data_inicio/data_fim são fornecidos, filtra os ficheiros internos
-    ao intervalo solicitado (útil para ZIPs mensais com CSVs diários).
-
-    Devolve (rows, logs) acumulados de todos os ficheiros internos.
-    """
-    zip_nome = os.path.basename(zip_path)
-    log('ZIP', f'A abrir {zip_nome}', job_id, ch)
-
-    try:
-        with zipfile.ZipFile(zip_path, 'r') as z:
-            all_internal = z.namelist()
-    except Exception as e:
-        log('ERRO', f'{zip_nome}: não foi possível abrir o ZIP — {e}', job_id, ch)
-        return [], []
-
-    # Filtrar ficheiros internos pelo intervalo de datas (para ZIPs mensais)
-    if data_inicio and data_fim:
-        ini = date.fromisoformat(data_inicio)
-        fim = date.fromisoformat(data_fim)
-        internal_files = []
-        for f in all_internal:
-            d_str = extrai_data(f)
-            if d_str == '1970-01-01':
-                # Nome sem data reconhecível → incluir por precaução
-                internal_files.append(f)
-                continue
-            try:
-                d = date.fromisoformat(d_str)
-                if ini <= d <= fim:
-                    internal_files.append(f)
-            except ValueError:
-                internal_files.append(f)
-
-        excluidos = len(all_internal) - len(internal_files)
-        if excluidos:
-            log('INFO',
-                f'{zip_nome}: {excluidos} ficheiro(s) interno(s) fora do intervalo ignorados',
-                job_id, ch)
-    else:
-        internal_files = all_internal
-
-    log('INFO', f'{zip_nome}: {len(internal_files)} ficheiro(s) interno(s) a processar: {internal_files}', job_id, ch)
-
-    rows_zip: list = []
-    logs_zip: list = []
-
-    with ThreadPoolExecutor(max_workers=workers_interno) as ex:
-        futures = {
-            ex.submit(
-                _processa_internal_file,
-                zip_path, ifile,
-                mapa_unidades_ch, escaloes,
-                workers_hora_pais, job_id, None,  # ch=None nas threads filho
-            ): ifile
-            for ifile in internal_files
-        }
-        for fut in as_completed(futures):
-            ifile = futures[fut]
-            try:
-                rows, logs = fut.result()
-                rows_zip.extend(rows)
-                logs_zip.extend(logs)
-            except Exception as e:
-                log('ERRO', f'{zip_nome}/{ifile}: {e}', job_id, ch)
-
-    log('ZIP',
-        f'{zip_nome}: concluído — '
-        f'{len(rows_zip)} períodos | {sum(r["n_bids_substituidos"] for r in rows_zip)} bids sub.',
-        job_id, ch)
-
-    return rows_zip, logs_zip
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -710,58 +581,69 @@ def run_worker(
             f'{n_outras} categorias outras classes',
             job_id, ch)
 
-        # ── 2. Descobrir ZIPs no intervalo ───────────────────────────────────
-        zip_files = zip_files_no_intervalo(data_inicio, data_fim)
-        if not zip_files:
-            log('AVISO', f'Nenhum ficheiro ZIP encontrado em /data/bids/ '
-                         f'no intervalo {data_inicio} → {data_fim}', job_id, ch)
+        # ── 2. Descobrir datas disponíveis em mibel.bids_raw ─────────────────
+        rows_datas = ch.execute(
+            "SELECT DISTINCT toString(data_ficheiro) "
+            "FROM mibel.bids_raw "
+            "WHERE data_ficheiro >= toDate(%(ini)s) "
+            "  AND data_ficheiro <= toDate(%(fim)s) "
+            "ORDER BY data_ficheiro",
+            {'ini': data_inicio, 'fim': data_fim},
+        )
+        datas = [r[0] for r in rows_datas]
+
+        if not datas:
+            log('AVISO',
+                f'Nenhum dado encontrado em mibel.bids_raw '
+                f'para o intervalo {data_inicio} → {data_fim}. '
+                f'Ingira os ficheiros ZIP na tab "Ingestão de Dados" antes de executar estudos.',
+                job_id, ch)
             log('STATUS', 'DONE', job_id, ch)
             return True
 
-        log('INFO', f'Encontrados {len(zip_files)} ficheiro(s) ZIP:', job_id, ch)
-        for zp in zip_files:
-            log('INFO', f'  • {os.path.basename(zp)}', job_id, ch)
+        log('INFO', f'Encontradas {len(datas)} data(s) em mibel.bids_raw:', job_id, ch)
+        for d in datas[:10]:
+            log('INFO', f'  • {d}', job_id, ch)
+        if len(datas) > 10:
+            log('INFO', f'  … e mais {len(datas) - 10} data(s)', job_id, ch)
 
-        # ── 3. Processar todos os ZIPs ────────────────────────────────────────
-        workers_zip       = n_workers
-        workers_interno   = max(1, n_workers // 2)
+        # ── 3. Processar todas as datas ───────────────────────────────────────
+        workers_data      = n_workers
         workers_hora_pais = max(2, n_workers)
 
         log('INFO',
-            f'Paralelismo: ZIP={workers_zip} | interno={workers_interno} | hora/país={workers_hora_pais}',
+            f'Paralelismo: datas={workers_data} | hora/país={workers_hora_pais}',
             job_id, ch)
 
         all_rows: list = []
         all_logs: list = []
         erros: list    = []
 
-        with ThreadPoolExecutor(max_workers=workers_zip) as ex:
+        with ThreadPoolExecutor(max_workers=workers_data) as ex:
             futures = {
                 ex.submit(
-                    _processa_zip,
-                    zp, mapa_unidades_ch, escaloes,
-                    workers_interno, workers_hora_pais,
+                    _processa_data_ch,
+                    d, mapa_unidades_ch, escaloes,
+                    workers_hora_pais,
                     job_id, None,  # ch=None nas threads filho
-                    data_inicio, data_fim,
-                ): zp
-                for zp in zip_files
+                ): d
+                for d in datas
             }
             concluidos = 0
             for fut in as_completed(futures):
-                zp = futures[fut]
+                d = futures[fut]
                 concluidos += 1
                 try:
                     rows, logs = fut.result()
                     all_rows.extend(rows)
                     all_logs.extend(logs)
                     log('INFO',
-                        f'[{concluidos}/{len(zip_files)}] {os.path.basename(zp)} processado — '
-                        f'{len(rows)} períodos acumulados até agora: {len(all_rows)}',
+                        f'[{concluidos}/{len(datas)}] {d} processado — '
+                        f'{len(rows)} períodos | acumulados: {len(all_rows)}',
                         job_id, ch)
                 except Exception as e:
-                    nome = os.path.basename(zp)
-                    erros.append(nome)
-                    log('ERRO', f'{nome}: {e}', job_id, ch)
+                    erros.append(d)
+                    log('ERRO', f'{d}: {e}', job_id, ch)
 
         # ── 4. Inserir resultados no ClickHouse ──────────────────────────────
         log('INFO', '─' * 60, job_id, ch)
@@ -849,11 +731,11 @@ def run_worker(
 
         log('INFO', f'Períodos processados : {len(all_rows)}', job_id, ch)
         log('INFO', f'Bids substituídos    : {total_bids_sub}', job_id, ch)
-        log('INFO', f'ZIPs com erro        : {len(erros)}', job_id, ch)
+        log('INFO', f'Datas com erro       : {len(erros)}', job_id, ch)
 
         if erros:
             for e in erros:
-                log('AVISO', f'  Ficheiro com erro: {e}', job_id, ch)
+                log('AVISO', f'  Data com erro: {e}', job_id, ch)
 
         log('INFO', '═' * 60, job_id, ch)
         log('STATUS', 'DONE', job_id, ch)
