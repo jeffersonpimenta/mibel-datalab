@@ -1456,14 +1456,17 @@ document.addEventListener('DOMContentLoaded', () => {
 // ============================================================================
 
 const IngestaoTab = {
-    queue: [],   // [{ file, status, error }]  status: waiting|uploading|done|error|invalid
+    // queue items: { file, status, error, progress, jobId, jobStatus }
+    // status: waiting|uploading|ingesting|done|error|invalid
+    queue: [],
+    _pollTimer: null,
 
     // ------------------------------------------------------------------
     // Initialisation
     // ------------------------------------------------------------------
     init() {
         this._bindDropzone();
-        this.loadFiles();
+        this.loadSummary();
     },
 
     // ------------------------------------------------------------------
@@ -1475,7 +1478,6 @@ const IngestaoTab = {
         if (!zone || zone._bound) return;
         zone._bound = true;
 
-        // Click anywhere on the zone to open the file picker
         zone.addEventListener('click', (e) => {
             if (e.target.tagName !== 'LABEL') input.click();
         });
@@ -1484,7 +1486,6 @@ const IngestaoTab = {
             input.value = '';
         });
 
-        // Drag events
         zone.addEventListener('dragover', (e) => {
             e.preventDefault();
             zone.classList.add('drag-over');
@@ -1513,11 +1514,10 @@ const IngestaoTab = {
         return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     },
 
-    _parseMonth(filename) {
-        const m = filename.match(/curva_pbc_uof_(\d{4})(\d{2})\.zip$/);
-        if (!m) return filename;
-        const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-        return months[parseInt(m[2], 10) - 1] + ' ' + m[1];
+    _formatRows(n) {
+        if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + ' M';
+        if (n >= 1_000)     return (n / 1_000).toFixed(0) + ' K';
+        return String(n);
     },
 
     _isValidName(name) {
@@ -1528,13 +1528,15 @@ const IngestaoTab = {
     // Queue management
     // ------------------------------------------------------------------
     _enqueue(files) {
-        const PATTERN = /^curva_pbc_uof_\d{6}\.zip$/;
         for (const f of files) {
-            const valid = PATTERN.test(f.name);
+            const valid = this._isValidName(f.name);
             this.queue.push({
-                file:   f,
-                status: valid ? 'waiting' : 'invalid',
-                error:  valid ? null : `Nome inválido: "${f.name}". Esperado: curva_pbc_uof_YYYYMM.zip`,
+                file:      f,
+                status:    valid ? 'waiting' : 'invalid',
+                error:     valid ? null : `Nome inválido: "${f.name}". Esperado: curva_pbc_uof_YYYYMM.zip`,
+                progress:  0,
+                jobId:     null,
+                jobStatus: null,
             });
         }
         this._renderQueue();
@@ -1542,12 +1544,16 @@ const IngestaoTab = {
     },
 
     clearQueue() {
-        this.queue = this.queue.filter(i => i.status === 'uploading');
+        this.queue = this.queue.filter(i => i.status === 'uploading' || i.status === 'ingesting');
         this._renderQueue();
+        if (this.queue.length === 0 && this._pollTimer) {
+            clearInterval(this._pollTimer);
+            this._pollTimer = null;
+        }
     },
 
     // ------------------------------------------------------------------
-    // Upload processing (serial to avoid saturating PHP)
+    // Upload processing (serial uploads, parallel ingestion)
     // ------------------------------------------------------------------
     _uploading: false,
 
@@ -1561,11 +1567,10 @@ const IngestaoTab = {
         this._renderQueue();
 
         try {
-            const fd = new FormData();
+            const fd  = new FormData();
             fd.append('file', next.file);
 
             const xhr = new XMLHttpRequest();
-            // Track upload progress
             xhr.upload.onprogress = (e) => {
                 if (e.lengthComputable) {
                     next.progress = Math.round((e.loaded / e.total) * 100);
@@ -1573,20 +1578,22 @@ const IngestaoTab = {
                 }
             };
 
-            await new Promise((resolve, reject) => {
+            await new Promise((resolve) => {
                 xhr.open('POST', '/api/ingestao');
                 xhr.onload = () => {
                     let json;
                     try { json = JSON.parse(xhr.responseText); } catch (_) { json = {}; }
-                    if (xhr.status === 201) {
-                        next.status    = 'done';
-                        next.overwrite = json.overwrite;
-                        resolve();
+                    if (xhr.status === 201 && json.job_id) {
+                        next.status    = 'ingesting';
+                        next.jobId     = json.job_id;
+                        next.jobStatus = 'RUNNING';
+                        // Start polling
+                        this._startPolling();
                     } else {
                         next.status = 'error';
                         next.error  = json.error || `HTTP ${xhr.status}`;
-                        resolve();
                     }
+                    resolve();
                 };
                 xhr.onerror = () => {
                     next.status = 'error';
@@ -1602,17 +1609,48 @@ const IngestaoTab = {
 
         this._uploading = false;
         this._renderQueue();
-
-        if (next.status === 'done') {
-            this.loadFiles();
-        }
-
-        // Continue with remaining items
         this._processQueue();
     },
 
     // ------------------------------------------------------------------
-    // Render upload queue
+    // Poll ingestion job status
+    // ------------------------------------------------------------------
+    _startPolling() {
+        if (this._pollTimer) return;
+        this._pollTimer = setInterval(() => this._pollJobs(), 2000);
+    },
+
+    async _pollJobs() {
+        const ingesting = this.queue.filter(i => i.status === 'ingesting' && i.jobId);
+        if (ingesting.length === 0) {
+            clearInterval(this._pollTimer);
+            this._pollTimer = null;
+            return;
+        }
+
+        for (const item of ingesting) {
+            try {
+                const data = await apiGet(`/api/estudos/${item.jobId}`);
+                const job  = data.job || data;
+                item.jobStatus = job.status;
+
+                if (job.status === 'DONE') {
+                    item.status = 'done';
+                    // Refresh ClickHouse summary
+                    this.loadSummary();
+                } else if (job.status === 'FAILED') {
+                    item.status = 'error';
+                    item.error  = job.erro || 'Worker falhou';
+                }
+            } catch (_) {
+                // Ignore transient network errors
+            }
+        }
+        this._renderQueue();
+    },
+
+    // ------------------------------------------------------------------
+    // Render upload/ingestão queue
     // ------------------------------------------------------------------
     _renderQueue() {
         const card = document.getElementById('ingestao-queue-card');
@@ -1625,7 +1663,7 @@ const IngestaoTab = {
         }
         card.style.display = '';
 
-        list.innerHTML = this.queue.map((item, idx) => {
+        list.innerHTML = this.queue.map((item) => {
             const sizeStr = this._formatBytes(item.file.size);
             let statusHtml = '';
             switch (item.status) {
@@ -1635,10 +1673,10 @@ const IngestaoTab = {
                 case 'uploading': {
                     const pct = item.progress ?? 0;
                     statusHtml = `
-                        <div style="flex:1;min-width:120px">
+                        <div style="flex:1;min-width:140px">
                             <div class="flex items-center gap-1">
                                 <span class="spinner"></span>
-                                <span class="iq-status-uploading">A enviar... ${pct}%</span>
+                                <span class="iq-status-uploading">A enviar… ${pct}%</span>
                             </div>
                             <div class="ingestao-progress">
                                 <div class="ingestao-progress-bar" style="width:${pct}%"></div>
@@ -1646,14 +1684,25 @@ const IngestaoTab = {
                         </div>`;
                     break;
                 }
+                case 'ingesting':
+                    statusHtml = `
+                        <div class="flex items-center gap-1">
+                            <span class="spinner"></span>
+                            <span class="iq-status-uploading">A ingerir no ClickHouse…</span>
+                        </div>`;
+                    break;
                 case 'done':
-                    statusHtml = `<span class="iq-status-done">${item.overwrite ? 'Substituído' : 'Carregado'}</span>`;
+                    statusHtml = `<span class="iq-status-done">&#10003; Ingerido</span>`;
                     break;
                 case 'error':
-                    statusHtml = `<span class="iq-status-error" title="${escapeHtml(item.error || '')}">Erro</span>`;
+                    statusHtml = item.error
+                        ? `<span class="iq-status-error">&#10007; ${escapeHtml(item.error)}</span>`
+                        : `<span class="iq-status-error">&#10007; Erro desconhecido</span>`;
                     break;
                 case 'invalid':
-                    statusHtml = `<span class="iq-status-invalid" title="${escapeHtml(item.error || '')}">Inválido</span>`;
+                    statusHtml = item.error
+                        ? `<span class="iq-status-invalid">&#9888; ${escapeHtml(item.error)}</span>`
+                        : `<span class="iq-status-invalid">&#9888; Nome inválido</span>`;
                     break;
             }
 
@@ -1667,58 +1716,74 @@ const IngestaoTab = {
     },
 
     // ------------------------------------------------------------------
-    // Files list
+    // ClickHouse data summary
     // ------------------------------------------------------------------
-    async loadFiles() {
-        const tbody   = document.getElementById('ingestao-files-tbody');
+    async loadSummary() {
+        const content = document.getElementById('ingestao-ch-content');
         const counter = document.getElementById('ingestao-counter');
-        if (!tbody) return;
+        if (!content) return;
 
         try {
-            const data = await apiGet('/api/ingestao');
-            const files = data.files || [];
+            const data  = await apiGet('/api/ingestao');
+            const meses = data.meses || [];
 
-            if (counter) counter.textContent = `${files.length} ficheiro(s) em disco`;
+            if (counter) {
+                const total = data.total_rows || 0;
+                counter.textContent = `${meses.length} mês(es) · ${this._formatRows(total)} bids`;
+            }
 
-            if (files.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted" style="padding:2rem">
-                    Nenhum ficheiro em /data/bids
-                </td></tr>`;
+            if (data.ch_error) {
+                content.innerHTML = `<div class="text-muted" style="padding:1.5rem">
+                    ClickHouse indisponível: ${escapeHtml(data.ch_error)}
+                </div>`;
                 return;
             }
 
-            tbody.innerHTML = files.map(f => {
-                const month = this._parseMonth(f.name);
-                const mod   = new Date(f.modified).toLocaleString('pt-PT');
-                return `
-                    <tr>
-                        <td><code style="font-size:0.8125rem">${escapeHtml(f.name)}</code></td>
-                        <td>${escapeHtml(month)}</td>
-                        <td class="text-right">${this._formatBytes(f.size)}</td>
-                        <td>${escapeHtml(mod)}</td>
-                        <td class="table-actions">
-                            <button class="btn btn-danger btn-sm"
-                                onclick="IngestaoTab.deleteFile('${escapeHtml(f.name)}')">
-                                Eliminar
-                            </button>
-                        </td>
-                    </tr>`;
-            }).join('');
+            if (meses.length === 0) {
+                content.innerHTML = `<div style="padding:2rem;text-align:center;color:var(--color-text-muted)">
+                    <p style="font-size:1.5rem;margin:0 0 0.5rem">&#128190;</p>
+                    <p style="margin:0">Nenhum dado ingerido ainda.</p>
+                    <p style="margin:0.25rem 0 0;font-size:0.875rem">
+                        Arraste um ficheiro <code>curva_pbc_uof_YYYYMM.zip</code> para a zona acima.
+                    </p>
+                </div>`;
+                return;
+            }
+
+            // Render month cards
+            const cardsHtml = meses.map(m => `
+                <div class="ingestao-month-card">
+                    <div class="ingestao-month-label">${escapeHtml(m.mes_label)}</div>
+                    <div class="ingestao-month-rows">${this._formatRows(m.n_rows)} <span class="ingestao-month-unit">bids</span></div>
+                    <div class="ingestao-month-meta">
+                        ${m.n_dias} dia(s) &nbsp;·&nbsp; ${escapeHtml(m.data_min)} a ${escapeHtml(m.data_max)}
+                    </div>
+                    <div class="ingestao-month-actions">
+                        <button class="btn btn-danger btn-sm"
+                            onclick="IngestaoTab.deleteMes('${escapeHtml(m.mes)}', '${escapeHtml(m.mes_label)}')">
+                            Eliminar
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+
+            content.innerHTML = `<div class="ingestao-months-grid">${cardsHtml}</div>`;
+
         } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="5" class="text-muted" style="padding:1rem">
-                Erro ao carregar lista: ${escapeHtml(e.message)}
-            </td></tr>`;
+            if (content) content.innerHTML = `<div class="text-muted" style="padding:1rem">
+                Erro ao carregar resumo: ${escapeHtml(e.message)}
+            </div>`;
             if (counter) counter.textContent = 'Erro';
         }
     },
 
-    async deleteFile(filename) {
-        if (!confirm(`Eliminar permanentemente "${filename}"?`)) return;
+    async deleteMes(yyyymm, label) {
+        if (!confirm(`Eliminar TODOS os dados do mês ${label} (${yyyymm}) do ClickHouse?\n\nEsta acção não pode ser desfeita.`)) return;
         try {
-            const data = await apiDelete(`/api/ingestao/${encodeURIComponent(filename)}`);
+            const data = await apiDelete(`/api/ingestao/mes/${encodeURIComponent(yyyymm)}`);
             if (data.success) {
-                toast(`"${filename}" eliminado.`, 'success');
-                this.loadFiles();
+                toast(`Mês ${label} eliminado (${this._formatRows(data.deleted || 0)} bids removidos).`, 'success');
+                this.loadSummary();
             } else {
                 toast(data.error || 'Erro ao eliminar.', 'error');
             }
