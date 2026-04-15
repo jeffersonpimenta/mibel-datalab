@@ -21,6 +21,7 @@
         <button data-tab="estudos">Estudos</button>
         <button data-tab="resultados">Resultados</button>
         <button data-tab="ingestao">Ingestão de Dados</button>
+        <button data-tab="explorador">Explorador</button>
     </nav>
 
     <main>
@@ -430,6 +431,220 @@
 
         </div><!-- /#tab-ingestao -->
 
+        <!-- ================================================================
+             TAB 6: Explorador de Dados
+             ================================================================ -->
+        <div id="tab-explorador" class="tab-content">
+
+            <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+                <div>
+                    <h2 style="margin:0 0 0.25rem">Explorador de Dados</h2>
+                    <span class="text-muted text-sm">Analise distribuição de bids, unidades geradoras, perfis horários e padrões do mercado MIBEL</span>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="ExploradorTab.aplicarFiltros()">
+                    Actualizar
+                </button>
+            </div>
+
+            <!-- Filter bar -->
+            <div class="card mb-3">
+                <div class="card-body" style="padding:0.75rem 1.25rem">
+                    <div class="filters" style="flex-wrap:wrap;gap:0.75rem;align-items:flex-end">
+                        <div class="filter-group">
+                            <label for="exp-de">De:</label>
+                            <input type="date" id="exp-de" class="form-input form-input-sm">
+                        </div>
+                        <div class="filter-group">
+                            <label for="exp-ate">Até:</label>
+                            <input type="date" id="exp-ate" class="form-input form-input-sm">
+                        </div>
+                        <div class="filter-group">
+                            <label for="exp-pais">País:</label>
+                            <select id="exp-pais" class="form-select form-select-sm" style="min-width:90px">
+                                <option value="">Todos</option>
+                                <option value="MI">MI</option>
+                                <option value="ES">ES</option>
+                                <option value="PT">PT</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="exp-tipo">Tipo:</label>
+                            <select id="exp-tipo" class="form-select form-select-sm" style="min-width:110px">
+                                <option value="">Todos</option>
+                                <option value="V">V (Venda)</option>
+                                <option value="C">C (Compra)</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="ExploradorTab.aplicarFiltros()">
+                            Aplicar Filtros
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="ExploradorTab.limparFiltros()">
+                            Limpar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Validation / empty state message -->
+            <div id="exp-empty-state" class="note note-info mb-3" style="display:flex;align-items:center;gap:0.75rem;padding:1rem 1.25rem">
+                <span style="font-size:1.5rem;line-height:1">&#128269;</span>
+                <span>Preencha <strong>De</strong> e <strong>Até</strong> e clique em <strong>Aplicar Filtros</strong> para consultar.</span>
+            </div>
+            <div id="exp-error-state" class="note note-warning mb-3" style="display:none;align-items:center;gap:0.75rem;padding:1rem 1.25rem">
+                <span style="font-size:1.25rem;line-height:1">&#9888;</span>
+                <span id="exp-error-msg">Preencha os campos "De" e "Até" antes de consultar.</span>
+            </div>
+
+            <!-- Main content — hidden until first query runs -->
+            <div id="exp-main-content" style="display:none">
+
+            <!-- KPI Cards -->
+            <div id="exp-kpi-cards" class="stat-cards mb-3"></div>
+
+            <!-- Charts row 1: Distribuição + Perfil Horário -->
+            <div class="exp-charts-row mb-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Distribuição por País e Tipo</h2>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="exp-chart-distrib" height="240"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Perfil Horário — Preço Médio (€/MWh)</h2>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="exp-chart-horario" height="240"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts row 2: Histograma de Preços + Volume por Categoria -->
+            <div class="exp-charts-row mb-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Histograma de Preços (€/MWh)</h2>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="exp-chart-histograma" height="240"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Volume por Categoria (M MWh)</h2>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="exp-chart-categorias" height="240"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tendência Mensal (full width) -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h2>Tendência Mensal — Energia &amp; Preço Médio</h2>
+                </div>
+                <div class="card-body">
+                    <canvas id="exp-chart-mensal" height="90"></canvas>
+                </div>
+            </div>
+
+            <!-- Top Unidades Geradoras -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h2>Top Unidades Geradoras</h2>
+                    <div class="flex gap-2 items-center">
+                        <select id="exp-top-sort" class="form-select form-select-sm"
+                                onchange="ExploradorTab.loadTopUnidades()">
+                            <option value="energia">Por Energia (MWh)</option>
+                            <option value="bids">Por Nº Bids</option>
+                        </select>
+                        <select id="exp-top-limit" class="form-select form-select-sm"
+                                onchange="ExploradorTab.loadTopUnidades()">
+                            <option value="10">Top 10</option>
+                            <option value="25" selected>Top 25</option>
+                            <option value="50">Top 50</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:36px">#</th>
+                                <th>Unidade</th>
+                                <th>Descrição</th>
+                                <th style="width:90px">Regime</th>
+                                <th style="width:160px">Categoria</th>
+                                <th style="width:50px">Zona</th>
+                                <th class="text-right" style="width:90px">Bids</th>
+                                <th class="text-right" style="width:110px">Energia (MWh)</th>
+                                <th class="text-right" style="width:100px">P.Médio (€)</th>
+                                <th class="text-right" style="width:80px">P.Min (€)</th>
+                                <th class="text-right" style="width:80px">P.Max (€)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="exp-top-tbody">
+                            <tr>
+                                <td colspan="11" class="loading">
+                                    <span class="spinner"></span> A carregar...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            </div><!-- /#exp-main-content -->
+
+            <!-- Console SQL — sempre visível, não precisa de filtros de data -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h2>Console SQL ClickHouse</h2>
+                    <span class="badge badge-warning">Apenas SELECT</span>
+                </div>
+                <div class="card-body">
+                    <div class="note note-info mb-2">
+                        Execute queries <code>SELECT</code> directamente no ClickHouse (<code>mibel.*</code>).
+                        Sem <code>LIMIT</code>, é aplicado automaticamente um limite de 200 linhas.
+                    </div>
+                    <div class="exp-sql-presets mb-2">
+                        <span class="text-sm text-muted">Exemplos rápidos:</span>
+                        <button class="btn btn-secondary btn-sm"
+                                onclick="ExploradorTab.setPreset('overview')">Resumo geral</button>
+                        <button class="btn btn-secondary btn-sm"
+                                onclick="ExploradorTab.setPreset('horas_caras')">Horas mais caras</button>
+                        <button class="btn btn-secondary btn-sm"
+                                onclick="ExploradorTab.setPreset('unidade_preco')">Preço por unidade</button>
+                        <button class="btn btn-secondary btn-sm"
+                                onclick="ExploradorTab.setPreset('curva_oferta')">Curva de oferta</button>
+                        <button class="btn btn-secondary btn-sm"
+                                onclick="ExploradorTab.setPreset('bids_hora_dia')">Bids por hora/dia</button>
+                    </div>
+                    <textarea id="exp-sql-input" class="exp-sql-textarea"
+                              rows="6"
+                              placeholder="SELECT pais, count() AS n FROM mibel.bids_raw GROUP BY pais"></textarea>
+                    <div class="flex justify-between items-center mt-2">
+                        <span id="exp-sql-status" class="text-sm text-muted"></span>
+                        <button class="btn btn-primary" onclick="ExploradorTab.runQuery()">
+                            Executar
+                        </button>
+                    </div>
+                    <div id="exp-sql-result" class="mt-3" style="display:none">
+                        <div class="exp-sql-result-container">
+                            <table id="exp-sql-table">
+                                <thead id="exp-sql-thead"></thead>
+                                <tbody id="exp-sql-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /#tab-explorador -->
+
     </main>
 
     <!-- Toast notification container -->
@@ -452,6 +667,6 @@
     </dialog>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-    <script src="/js/app.js"></script>
+    <script src="/js/app.js?v=<?= filemtime(__DIR__ . '/js/app.js') ?>"></script>
 </body>
 </html>
