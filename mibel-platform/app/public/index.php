@@ -321,7 +321,7 @@
                 <div id="res-charts-section">
                     <div class="card mb-3">
                         <div class="card-header">
-                            <h2>Evolução do Preço de Clearing</h2>
+                            <h2 id="res-chart-serie-titulo">Evolução do Preço de Clearing</h2>
                         </div>
                         <div class="card-body">
                             <canvas id="chart-serie" height="100"></canvas>
@@ -329,7 +329,7 @@
                     </div>
                     <div class="card mb-3">
                         <div class="card-header">
-                            <h2>Delta Médio por Hora do Dia</h2>
+                            <h2 id="res-chart-delta-titulo">Delta Médio por Hora do Dia</h2>
                         </div>
                         <div class="card-body">
                             <canvas id="chart-delta" height="80"></canvas>
@@ -349,7 +349,7 @@
                     </div>
                     <div class="table-container">
                         <table>
-                            <thead>
+                            <thead id="res-tabela-thead">
                                 <tr>
                                     <th>Data</th>
                                     <th>Hora</th>
