@@ -1111,6 +1111,7 @@ const EstudosTab = {
 
 const ResultadosTab = {
     jobId: null,
+    tipo: 'substituicao',
     pais: '',
     chartSerie: null,
     chartDelta: null,
@@ -1144,13 +1145,13 @@ const ResultadosTab = {
             if (data.error) { toast('Erro ao carregar estatísticas: ' + data.error, 'error'); return; }
 
             const { job, stats } = data;
+            this.tipo = stats.tipo || (job?.tipo === 'otimizacao' ? 'otimizacao' : 'substituicao');
             const nPeriodos = parseInt(stats.n_periodos || 0);
 
             // Header
             const titulo = document.getElementById('res-titulo');
             if (titulo) {
-                const tipo = job?.tipo === 'otimizacao' ? 'Optimização' : 'Substituição';
-                titulo.textContent = `Resultados — ${tipo}`;
+                titulo.textContent = `Resultados — ${this.tipo === 'otimizacao' ? 'Optimização' : 'Substituição'}`;
             }
 
             const badges = document.getElementById('res-badges');
@@ -1164,10 +1165,10 @@ const ResultadosTab = {
             }
 
             if (nPeriodos === 0) {
-                document.getElementById('res-no-data').hidden         = false;
-                document.getElementById('res-charts-section').hidden  = true;
-                document.getElementById('res-tabela-section').hidden  = true;
-                document.getElementById('res-stat-cards').innerHTML   = '';
+                document.getElementById('res-no-data').hidden        = false;
+                document.getElementById('res-charts-section').hidden = true;
+                document.getElementById('res-tabela-section').hidden = true;
+                document.getElementById('res-stat-cards').innerHTML  = '';
                 return;
             }
 
@@ -1175,6 +1176,8 @@ const ResultadosTab = {
             document.getElementById('res-charts-section').hidden = false;
             document.getElementById('res-tabela-section').hidden = false;
 
+            this._updateTableHeaders();
+            this._updateChartTitles();
             this.renderStatCards(stats);
             await Promise.all([this.loadCharts(), this.loadTabela(0)]);
         } catch (e) {
@@ -1182,35 +1185,111 @@ const ResultadosTab = {
         }
     },
 
+    _updateTableHeaders() {
+        const thead = document.getElementById('res-tabela-thead');
+        if (!thead) return;
+        if (this.tipo === 'otimizacao') {
+            thead.innerHTML = `<tr>
+                <th>Data</th><th>Hora</th><th>País</th>
+                <th class="text-right">P.Orig (€/MWh)</th>
+                <th class="text-right">P.Base (€/MWh)</th>
+                <th class="text-right">P.Óptimo (€/MWh)</th>
+                <th class="text-right">Δ Preço</th>
+                <th class="text-right">Lucro Base (€)</th>
+                <th class="text-right">Lucro Opt (€)</th>
+                <th class="text-right">Δ Lucro (€)</th>
+                <th class="text-right">Bids Rem.</th>
+            </tr>`;
+        } else {
+            thead.innerHTML = `<tr>
+                <th>Data</th><th>Hora</th><th>País</th>
+                <th class="text-right">P.Orig (€/MWh)</th>
+                <th class="text-right">P.Sim (€/MWh)</th>
+                <th class="text-right">Δ Preço</th>
+                <th class="text-right">Vol.Orig (MWh)</th>
+                <th class="text-right">Vol.Sim (MWh)</th>
+                <th class="text-right">Bids Sub.</th>
+            </tr>`;
+        }
+    },
+
+    _updateChartTitles() {
+        const t1 = document.getElementById('res-chart-serie-titulo');
+        const t2 = document.getElementById('res-chart-delta-titulo');
+        if (this.tipo === 'otimizacao') {
+            if (t1) t1.textContent = 'Evolução do Preço de Clearing (Base vs Óptimo)';
+            if (t2) t2.textContent = 'Delta de Lucro PRE médio por Hora do Dia (€)';
+        } else {
+            if (t1) t1.textContent = 'Evolução do Preço de Clearing';
+            if (t2) t2.textContent = 'Delta Médio de Preço por Hora do Dia (€/MWh)';
+        }
+    },
+
     renderStatCards(stats) {
         const container = document.getElementById('res-stat-cards');
         if (!container) return;
 
-        const delta = parseFloat(stats.delta_medio || 0);
-        const deltaClass = delta < 0 ? 'negative' : (delta > 0 ? 'positive' : '');
-
-        container.innerHTML = `
-            <div class="stat-card">
-                <div class="stat-card-label">Preço médio original</div>
-                <div class="stat-card-value">${this.fmtNum(stats.preco_orig_medio, 2)}</div>
-                <div class="stat-card-unit">€/MWh</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-card-label">Preço médio simulado</div>
-                <div class="stat-card-value">${this.fmtNum(stats.preco_sub_medio, 2)}</div>
-                <div class="stat-card-unit">€/MWh</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-card-label">Delta médio</div>
-                <div class="stat-card-value ${deltaClass}">${delta >= 0 ? '+' : ''}${this.fmtNum(stats.delta_medio, 2)}</div>
-                <div class="stat-card-unit">€/MWh · min ${this.fmtNum(stats.delta_min, 2)} / max ${this.fmtNum(stats.delta_max, 2)}</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-card-label">Bids substituídos</div>
-                <div class="stat-card-value">${this.fmtNum(stats.total_bids_sub, 0)}</div>
-                <div class="stat-card-unit">total</div>
-            </div>
-        `;
+        if (this.tipo === 'otimizacao') {
+            const dL = parseFloat(stats.delta_lucro_total || 0);
+            const dLClass = dL > 0 ? 'positive' : (dL < 0 ? 'negative' : '');
+            container.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-card-label">Preço médio base</div>
+                    <div class="stat-card-value">${this.fmtNum(stats.preco_orig_medio, 2)}</div>
+                    <div class="stat-card-unit">€/MWh</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Preço médio óptimo</div>
+                    <div class="stat-card-value">${this.fmtNum(stats.preco_sim_medio, 2)}</div>
+                    <div class="stat-card-unit">€/MWh</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Lucro PRE base</div>
+                    <div class="stat-card-value">${this.fmtNum(stats.lucro_base_total, 0)}</div>
+                    <div class="stat-card-unit">€ total</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Lucro PRE óptimo</div>
+                    <div class="stat-card-value">${this.fmtNum(stats.lucro_opt_total, 0)}</div>
+                    <div class="stat-card-unit">€ total</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Delta lucro PRE</div>
+                    <div class="stat-card-value ${dLClass}">${dL >= 0 ? '+' : ''}${this.fmtNum(dL, 0)}</div>
+                    <div class="stat-card-unit">€</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Bids PRE removidos</div>
+                    <div class="stat-card-value">${this.fmtNum(stats.total_bids_rem, 0)}</div>
+                    <div class="stat-card-unit">total</div>
+                </div>
+            `;
+        } else {
+            const delta = parseFloat(stats.delta_medio || 0);
+            const dClass = delta < 0 ? 'negative' : (delta > 0 ? 'positive' : '');
+            container.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-card-label">Preço médio original</div>
+                    <div class="stat-card-value">${this.fmtNum(stats.preco_orig_medio, 2)}</div>
+                    <div class="stat-card-unit">€/MWh</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Preço médio simulado</div>
+                    <div class="stat-card-value">${this.fmtNum(stats.preco_sim_medio, 2)}</div>
+                    <div class="stat-card-unit">€/MWh</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Delta médio</div>
+                    <div class="stat-card-value ${dClass}">${delta >= 0 ? '+' : ''}${this.fmtNum(delta, 2)}</div>
+                    <div class="stat-card-unit">€/MWh · min ${this.fmtNum(stats.delta_min, 2)} / max ${this.fmtNum(stats.delta_max, 2)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Bids substituídos</div>
+                    <div class="stat-card-value">${this.fmtNum(stats.total_bids_sub, 0)}</div>
+                    <div class="stat-card-unit">total</div>
+                </div>
+            `;
+        }
     },
 
     async loadCharts() {
@@ -1227,9 +1306,9 @@ const ResultadosTab = {
     },
 
     renderChartSerie(data) {
-        let labels = data.labels    || [];
+        let labels = data.labels     || [];
         let orig   = data.preco_orig || [];
-        let sub    = data.preco_sub  || [];
+        let sub    = data.preco_sim  || [];
 
         // Subsample to ≤ 500 points for performance
         if (labels.length > 500) {
@@ -1244,13 +1323,14 @@ const ResultadosTab = {
         const ctx = document.getElementById('chart-serie');
         if (!ctx) return;
 
+        const simLabel = this.tipo === 'otimizacao' ? 'Óptimo' : 'Simulado';
         this.chartSerie = new Chart(ctx, {
             type: 'line',
             data: {
                 labels,
                 datasets: [
                     { label: 'Original', data: orig, borderColor: '#2563eb', backgroundColor: 'transparent', tension: 0.1, pointRadius: 0, borderWidth: 1.5 },
-                    { label: 'Simulado', data: sub,  borderColor: '#ea580c', backgroundColor: 'transparent', tension: 0.1, pointRadius: 0, borderWidth: 1.5 },
+                    { label: simLabel,   data: sub,  borderColor: '#ea580c', backgroundColor: 'transparent', tension: 0.1, pointRadius: 0, borderWidth: 1.5 },
                 ]
             },
             options: {
@@ -1265,10 +1345,13 @@ const ResultadosTab = {
     },
 
     renderChartDelta(data) {
-        const deltas   = data.delta    || [];
+        // Optimização: usa delta_lucro; substituição: usa delta (preço)
+        const isOpt    = this.tipo === 'otimizacao';
+        const deltas   = (isOpt ? data.delta_lucro : data.delta) || [];
         const horaNums = data.hora_num || [];
+        const yLabel   = isOpt ? '€' : '€/MWh';
+        const barLabel = isOpt ? 'Δ Lucro PRE médio (€)' : 'Δ Preço médio (€/MWh)';
 
-        // Aggregate by hora_num (1–24): compute mean delta per hour
         const sums   = Array(24).fill(0);
         const counts = Array(24).fill(0);
         deltas.forEach((d, i) => {
@@ -1279,10 +1362,12 @@ const ResultadosTab = {
             }
         });
         const deltasPorHora = sums.map((s, i) => counts[i] > 0 ? s / counts[i] : null);
-        const bgColors = deltasPorHora.map(v => v === null ? '#94a3b8' : (v < 0 ? '#16a34a' : '#dc2626'));
+        // Optimização: verde quando lucro sobe (> 0); substituição: verde quando preço cai (< 0)
+        const bgColors = deltasPorHora.map(v =>
+            v === null ? '#94a3b8' : (isOpt ? (v > 0 ? '#16a34a' : '#dc2626') : (v < 0 ? '#16a34a' : '#dc2626'))
+        );
 
         if (this.chartDelta) { this.chartDelta.destroy(); this.chartDelta = null; }
-
         const ctx2 = document.getElementById('chart-delta');
         if (!ctx2) return;
 
@@ -1290,18 +1375,12 @@ const ResultadosTab = {
             type: 'bar',
             data: {
                 labels: Array.from({ length: 24 }, (_, i) => `H${i + 1}`),
-                datasets: [{
-                    label: 'Delta médio (€/MWh)',
-                    data: deltasPorHora,
-                    backgroundColor: bgColors,
-                }]
+                datasets: [{ label: barLabel, data: deltasPorHora, backgroundColor: bgColors }]
             },
             options: {
                 responsive: true,
                 plugins: { legend: { display: false } },
-                scales: {
-                    y: { title: { display: true, text: '€/MWh' } }
-                }
+                scales: { y: { title: { display: true, text: yLabel } } }
             }
         });
     },
@@ -1309,10 +1388,11 @@ const ResultadosTab = {
     async loadTabela(offset = 0) {
         if (!this.jobId) return;
         this.tabelaOffset = offset;
+        const colspan = this.tipo === 'otimizacao' ? 11 : 9;
 
         const tbody = document.getElementById('res-tabela-tbody');
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="9" class="loading"><span class="spinner"></span> A carregar...</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="${colspan}" class="loading"><span class="spinner"></span> A carregar...</td></tr>`;
         }
 
         try {
@@ -1331,12 +1411,37 @@ const ResultadosTab = {
     renderTabelaRows(rows) {
         const tbody = document.getElementById('res-tabela-tbody');
         if (!tbody) return;
+        const colspan = this.tipo === 'otimizacao' ? 11 : 9;
 
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted" style="padding:2rem">Sem dados</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center text-muted" style="padding:2rem">Sem dados</td></tr>`;
             return;
         }
 
+        if (this.tipo === 'otimizacao') {
+            tbody.innerHTML = rows.map(r => {
+                const dP = parseFloat(r.delta_preco || 0);
+                const dL = parseFloat(r.delta_lucro || 0);
+                const dPStyle = dP < 0 ? 'color:#dc2626;font-weight:600' : (dP > 0 ? 'color:#16a34a;font-weight:600' : '');
+                const dLStyle = dL > 0 ? 'color:#16a34a;font-weight:600' : (dL < 0 ? 'color:#dc2626;font-weight:600' : '');
+                return `<tr>
+                    <td>${escapeHtml(r.data || '')}</td>
+                    <td>${escapeHtml(r.hora_raw || String(r.hora_num || ''))}</td>
+                    <td>${escapeHtml(r.pais || '')}</td>
+                    <td class="text-right">${this.fmtNum(r.preco_orig, 2)}</td>
+                    <td class="text-right">${this.fmtNum(r.preco_base, 2)}</td>
+                    <td class="text-right">${this.fmtNum(r.preco_sim, 2)}</td>
+                    <td class="text-right" style="${dPStyle}">${dP >= 0 ? '+' : ''}${this.fmtNum(dP, 2)}</td>
+                    <td class="text-right">${this.fmtNum(r.lucro_pre_base, 0)}</td>
+                    <td class="text-right">${this.fmtNum(r.lucro_pre_opt, 0)}</td>
+                    <td class="text-right" style="${dLStyle}">${dL >= 0 ? '+' : ''}${this.fmtNum(dL, 0)}</td>
+                    <td class="text-right">${r.n_bids_sub ?? 0}</td>
+                </tr>`;
+            }).join('');
+            return;
+        }
+
+        // Substituição
         tbody.innerHTML = rows.map(r => {
             const delta = parseFloat(r.delta_preco || 0);
             const dStyle = delta < 0
@@ -1348,12 +1453,12 @@ const ResultadosTab = {
                 <td>${escapeHtml(r.data || '')}</td>
                 <td>${escapeHtml(r.hora_raw || String(r.hora_num || ''))}</td>
                 <td>${escapeHtml(r.pais || '')}</td>
-                <td class="text-right">${this.fmtNum(r.preco_clearing_orig, 2)}</td>
-                <td class="text-right">${this.fmtNum(r.preco_clearing_sub, 2)}</td>
+                <td class="text-right">${this.fmtNum(r.preco_orig, 2)}</td>
+                <td class="text-right">${this.fmtNum(r.preco_sim, 2)}</td>
                 <td class="text-right" style="${dStyle}">${dStr}</td>
                 <td class="text-right">${this.fmtVol(r.volume_clearing_orig)}</td>
-                <td class="text-right">${this.fmtVol(r.volume_clearing_sub)}</td>
-                <td class="text-right">${r.n_bids_substituidos ?? 0}</td>
+                <td class="text-right">${this.fmtVol(r.volume_sim)}</td>
+                <td class="text-right">${r.n_bids_sub ?? 0}</td>
             </tr>`;
         }).join('');
     },
