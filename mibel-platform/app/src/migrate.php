@@ -227,7 +227,7 @@ $clickhouseTables = [
             zip_nome        String,
             hora_raw        String,
             hora_num        UInt8,
-            periodo_formato FixedString(3),
+            periodo_formato String,
             pais            String,
             tipo_oferta     FixedString(1),
             unidade         String,
@@ -274,6 +274,56 @@ $clickhouseTables = [
         ) ENGINE = MergeTree()
         PARTITION BY toYYYYMM(data_date)
         ORDER BY (job_id, data_date, hora_num, pais, unidade)
+    ",
+    'clearing_otimizacao' => "
+        CREATE TABLE IF NOT EXISTS mibel.clearing_otimizacao (
+            job_id                      String,
+            data_ficheiro               String,
+            data_date                   Date,
+            hora_raw                    String,
+            hora_num                    UInt8,
+            pais                        String,
+            preco_clearing_orig         Nullable(Float64),
+            volume_clearing_orig        Nullable(Float64),
+            preco_clearing_base         Nullable(Float64),
+            volume_clearing_base        Nullable(Float64),
+            preco_clearing_opt          Nullable(Float64),
+            volume_clearing_opt         Nullable(Float64),
+            vol_pre_despachado_base     Float64,
+            lucro_pre_base              Float64,
+            vol_pre_despachado_opt      Float64,
+            lucro_pre_opt               Float64,
+            delta_preco                 Nullable(Float64),
+            delta_vol_pre_despachado    Float64,
+            delta_lucro_pre             Float64,
+            delta_lucro_pre_pct         Nullable(Float64),
+            vol_pre_removido_opt        Float64,
+            n_bids_pre_removidos        UInt32,
+            unidades_pre_despachadas    String,
+            n_cenarios_testados         UInt32,
+            created_at                  DateTime DEFAULT now()
+        ) ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(data_date)
+        ORDER BY (job_id, data_date, hora_num, pais)
+    ",
+    'clearing_otimizacao_logs' => "
+        CREATE TABLE IF NOT EXISTS mibel.clearing_otimizacao_logs (
+            job_id           String,
+            data_ficheiro    String,
+            data_date        Date,
+            hora_raw         String,
+            hora_num         UInt8,
+            pais             String,
+            cenario          String,
+            preco_clearing   Nullable(Float64),
+            volume_clearing  Nullable(Float64),
+            lucro_pre        Float64,
+            n_bids_removidos UInt32,
+            vol_removido     Float64,
+            created_at       DateTime DEFAULT now()
+        ) ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(data_date)
+        ORDER BY (job_id, data_date, hora_num, pais, cenario)
     ",
     'worker_logs' => "
         CREATE TABLE IF NOT EXISTS mibel.worker_logs (
