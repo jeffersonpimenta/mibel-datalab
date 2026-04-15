@@ -417,6 +417,81 @@ def calcula_clearing(ofertas_compra: list, ofertas_venda: list) -> tuple:
     return preco_clearing, volume_clearing
 
 
+def meses_ingeridos_ch(ch: Client) -> list:
+    """
+    Devolve resumo por mês dos dados ingeridos em mibel.bids_raw.
+
+    Cada entrada: {mes, mes_label, n_rows, n_dias, data_min, data_max, ultima_ingestao}
+    """
+    rows = ch.execute(
+        """
+        SELECT
+            toYYYYMM(data_ficheiro)          AS mes,
+            count()                          AS n_rows,
+            countDistinct(data_ficheiro)     AS n_dias,
+            toString(min(data_ficheiro))     AS data_min,
+            toString(max(data_ficheiro))     AS data_max,
+            toString(max(ingestao_ts))       AS ultima_ingestao
+        FROM mibel.bids_raw
+        GROUP BY mes
+        ORDER BY mes
+        """
+    )
+    meses_nomes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+                   'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+    result = []
+    for mes, n_rows, n_dias, data_min, data_max, ultima_ingestao in rows:
+        mes_str = str(mes)          # "202401"
+        ano     = mes_str[:4]
+        mes_n   = int(mes_str[4:6])
+        result.append({
+            'mes':             mes_str,
+            'mes_label':       f'{meses_nomes[mes_n - 1]} {ano}',
+            'n_rows':          int(n_rows),
+            'n_dias':          int(n_dias),
+            'data_min':        data_min,
+            'data_max':        data_max,
+            'ultima_ingestao': ultima_ingestao,
+        })
+    return result
+
+
+def carrega_bids_df_ch(ch: Client, data_inicio: str, data_fim: str):
+    """
+    Carrega bids de mibel.bids_raw para um intervalo de datas como DataFrame.
+
+    Colunas do DataFrame: Hora, hora_num, Pais, Tipo Oferta, Unidad,
+                          Energia, Precio, data_ficheiro (str 'YYYY-MM-DD')
+    """
+    import pandas as pd
+
+    rows, cols_meta = ch.execute(
+        """
+        SELECT
+            hora_raw                         AS Hora,
+            hora_num,
+            pais                             AS Pais,
+            tipo_oferta                      AS `Tipo Oferta`,
+            unidade                          AS Unidad,
+            energia                          AS Energia,
+            precio                           AS Precio,
+            toString(data_ficheiro)          AS data_ficheiro
+        FROM mibel.bids_raw
+        WHERE data_ficheiro >= toDate(%(ini)s)
+          AND data_ficheiro <= toDate(%(fim)s)
+        """,
+        {'ini': data_inicio, 'fim': data_fim},
+        with_column_types=True,
+    )
+
+    col_names = [c[0] for c in cols_meta]
+
+    if not rows:
+        return pd.DataFrame(columns=col_names)
+
+    return pd.DataFrame(rows, columns=col_names)
+
+
 def aplica_substituicao_pre(
     bids_venda: list,
     categoria_zona: str,
