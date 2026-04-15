@@ -1552,6 +1552,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (tabId === 'ingestao') {
             IngestaoTab.init();
+        } else if (tabId === 'explorador') {
+            ExploradorTab.init();
         }
     });
 });
@@ -1895,5 +1897,613 @@ const IngestaoTab = {
         } catch (e) {
             toast('Erro: ' + e.message, 'error');
         }
+    },
+};
+
+// ============================================================================
+// Explorador de Dados Tab (Tab 6)
+// ============================================================================
+
+const ExploradorTab = {
+    _charts: {},
+    init() {
+        // Não carrega automaticamente — aguarda o utilizador seleccionar período
+    },
+
+    // -------------------------------------------------------------------------
+    // Filtros
+    // -------------------------------------------------------------------------
+
+    _getQs() {
+        const params = new URLSearchParams();
+        const de   = document.getElementById('exp-de')?.value   || '';
+        const ate  = document.getElementById('exp-ate')?.value  || '';
+        const pais = document.getElementById('exp-pais')?.value || '';
+        const tipo = document.getElementById('exp-tipo')?.value || '';
+        if (de)   params.set('de',   de);
+        if (ate)  params.set('ate',  ate);
+        if (pais) params.set('pais', pais);
+        if (tipo) params.set('tipo', tipo);
+        const qs = params.toString();
+        return qs ? '?' + qs : '';
+    },
+
+    async aplicarFiltros() {
+        const deEl  = document.getElementById('exp-de');
+        const ateEl = document.getElementById('exp-ate');
+        const de    = deEl?.value  || '';
+        const ate   = ateEl?.value || '';
+
+        // Validação visual: destacar campos em falta
+        if (deEl)  deEl.style.borderColor  = de  ? '' : 'var(--color-error)';
+        if (ateEl) ateEl.style.borderColor = ate ? '' : 'var(--color-error)';
+
+        const errorDiv = document.getElementById('exp-error-state');
+        const infoDiv  = document.getElementById('exp-empty-state');
+
+        if (!de || !ate) {
+            if (errorDiv) { errorDiv.style.display = 'flex'; }
+            if (infoDiv)  { infoDiv.style.display  = 'none'; }
+            if (!de) deEl?.focus();
+            return;
+        }
+
+        // Esconder mensagens de estado, mostrar conteúdo
+        if (errorDiv) errorDiv.style.display = 'none';
+        if (infoDiv)  infoDiv.style.display  = 'none';
+        const content = document.getElementById('exp-main-content');
+        if (content) content.style.display = '';
+
+        await Promise.all([
+            this.loadOverview(),
+            this.loadDistribuicao(),
+            this.loadPerfilHorario(),
+            this.loadHistograma(),
+            this.loadCategorias(),
+            this.loadTendenciaMensal(),
+            this.loadTopUnidades(),
+        ]);
+    },
+
+    limparFiltros() {
+        ['exp-de', 'exp-ate', 'exp-pais', 'exp-tipo'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) { el.value = ''; el.style.borderColor = ''; }
+        });
+        // Voltar ao estado inicial
+        const infoDiv  = document.getElementById('exp-empty-state');
+        const errorDiv = document.getElementById('exp-error-state');
+        const content  = document.getElementById('exp-main-content');
+        if (infoDiv)  infoDiv.style.display  = 'flex';
+        if (errorDiv) errorDiv.style.display = 'none';
+        if (content)  content.style.display  = 'none';
+        // Destruir gráficos para não persistir dados antigos
+        Object.keys(this._charts).forEach(k => this._destroyChart(k));
+    },
+
+    // -------------------------------------------------------------------------
+    // Helpers de formatação
+    // -------------------------------------------------------------------------
+
+    _fmtNum(v, dec = 0) {
+        const n = parseFloat(v);
+        if (isNaN(n)) return '—';
+        return n.toLocaleString('pt-PT', {
+            minimumFractionDigits: dec,
+            maximumFractionDigits: dec,
+        });
+    },
+
+    _fmtBig(v) {
+        const n = parseFloat(v);
+        if (isNaN(n)) return '—';
+        if (n >= 1e9) return (n / 1e9).toFixed(1) + ' G';
+        if (n >= 1e6) return (n / 1e6).toFixed(1) + ' M';
+        if (n >= 1e3) return (n / 1e3).toFixed(0) + ' K';
+        return String(Math.round(n));
+    },
+
+    _destroyChart(key) {
+        if (this._charts[key]) {
+            this._charts[key].destroy();
+            this._charts[key] = null;
+        }
+    },
+
+    // -------------------------------------------------------------------------
+    // Overview — KPI Cards
+    // -------------------------------------------------------------------------
+
+    async loadOverview() {
+        try {
+            const d = await apiGet('/api/explorador/overview' + this._getQs());
+            if (d.error) return;
+            const wrap = document.getElementById('exp-kpi-cards');
+            if (!wrap) return;
+
+            const dP = (v, dec) => this._fmtNum(v, dec);
+            const dB = (v)       => this._fmtBig(v);
+
+            wrap.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-card-label">Total de Bids</div>
+                    <div class="stat-card-value">${dB(d.total_bids)}</div>
+                    <div class="stat-card-unit">${d.n_meses || '—'} meses disponíveis</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Unidades Distintas</div>
+                    <div class="stat-card-value">${dP(d.n_unidades, 0)}</div>
+                    <div class="stat-card-unit">unidades geradoras</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Energia Total</div>
+                    <div class="stat-card-value">${dB(d.total_energia)}</div>
+                    <div class="stat-card-unit">MWh ofertados</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Preço Médio</div>
+                    <div class="stat-card-value">${dP(d.preco_medio, 2)}</div>
+                    <div class="stat-card-unit">€/MWh</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Período</div>
+                    <div class="stat-card-value" style="font-size:1rem">${escapeHtml(d.data_inicio || '—')}</div>
+                    <div class="stat-card-unit">até ${escapeHtml(d.data_fim || '—')}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">Bids Venda / Compra</div>
+                    <div class="stat-card-value" style="font-size:1rem">${dB(d.n_bids_venda)}</div>
+                    <div class="stat-card-unit">V · ${dB(d.n_bids_compra)} C</div>
+                </div>
+            `;
+        } catch (e) {
+            const wrap = document.getElementById('exp-kpi-cards');
+            if (wrap) wrap.innerHTML = `<span class="text-muted text-sm">Erro ao carregar KPIs: ${escapeHtml(e.message)}</span>`;
+        }
+    },
+
+    // -------------------------------------------------------------------------
+    // Distribuição por País e Tipo — Doughnut
+    // -------------------------------------------------------------------------
+
+    async loadDistribuicao() {
+        try {
+            const data = await apiGet('/api/explorador/distribuicao' + this._getQs());
+            this._renderDistrib(data.por_pais || []);
+        } catch (e) {
+            console.error('loadDistribuicao', e);
+        }
+    },
+
+    _renderDistrib(rows) {
+        this._destroyChart('distrib');
+        const ctx = document.getElementById('exp-chart-distrib');
+        if (!ctx) return;
+
+        if (rows.length === 0) {
+            ctx.parentElement.innerHTML = '<p class="text-muted text-center" style="padding:2rem">Sem dados</p>';
+            return;
+        }
+
+        const palette = {
+            'MI V': '#f59e0b', 'MI C': '#fcd34d',
+            'ES V': '#2563eb', 'ES C': '#93c5fd',
+            'PT V': '#16a34a', 'PT C': '#86efac',
+        };
+
+        const labels = rows.map(r => `${r.pais} ${r.tipo_oferta === 'V' ? 'Venda' : 'Compra'}`);
+        const energias = rows.map(r => parseFloat(r.total_energia || 0));
+        const bgColors = rows.map(r => {
+            const key = `${r.pais} ${r.tipo_oferta}`;
+            return palette[key] || '#94a3b8';
+        });
+
+        this._charts.distrib = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels,
+                datasets: [{
+                    data: energias,
+                    backgroundColor: bgColors,
+                    borderWidth: 2,
+                    borderColor: '#fff',
+                }],
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'right', labels: { font: { size: 12 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => {
+                                const v = ctx.raw;
+                                const tot = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                const pct = tot > 0 ? ((v / tot) * 100).toFixed(1) : 0;
+                                return ` ${(v / 1e6).toFixed(1)} M MWh  (${pct}%)`;
+                            },
+                        },
+                    },
+                },
+            },
+        });
+    },
+
+    // -------------------------------------------------------------------------
+    // Perfil Horário — Line chart H1-H24
+    // -------------------------------------------------------------------------
+
+    async loadPerfilHorario() {
+        try {
+            const data = await apiGet('/api/explorador/perfil-horario' + this._getQs());
+            this._renderHorario(Array.isArray(data) ? data : []);
+        } catch (e) {
+            console.error('loadPerfilHorario', e);
+        }
+    },
+
+    _renderHorario(rows) {
+        this._destroyChart('horario');
+        const ctx = document.getElementById('exp-chart-horario');
+        if (!ctx) return;
+
+        const paises = [...new Set(rows.map(r => r.pais))].sort();
+        const horas  = Array.from({ length: 24 }, (_, i) => i + 1);
+        const colors = { MI: '#f59e0b', ES: '#2563eb', PT: '#16a34a' };
+
+        const datasets = paises.map(p => ({
+            label: p,
+            data: horas.map(h => {
+                const r = rows.find(x => x.pais === p && parseInt(x.hora_num) === h);
+                return r ? parseFloat(r.preco_medio) : null;
+            }),
+            borderColor: colors[p] || '#94a3b8',
+            backgroundColor: 'transparent',
+            tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 3,
+            spanGaps: true,
+        }));
+
+        this._charts.horario = new Chart(ctx, {
+            type: 'line',
+            data: { labels: horas.map(h => `H${h}`), datasets },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'top' } },
+                scales: { y: { title: { display: true, text: '€/MWh' } } },
+            },
+        });
+    },
+
+    // -------------------------------------------------------------------------
+    // Histograma de Preços — Bar chart
+    // -------------------------------------------------------------------------
+
+    async loadHistograma() {
+        try {
+            const data = await apiGet('/api/explorador/histograma' + this._getQs());
+            this._renderHistograma(Array.isArray(data) ? data : []);
+        } catch (e) {
+            console.error('loadHistograma', e);
+        }
+    },
+
+    _renderHistograma(rows) {
+        this._destroyChart('histograma');
+        const ctx = document.getElementById('exp-chart-histograma');
+        if (!ctx) return;
+
+        const bgColors = rows.map(r => {
+            if (r.faixa === 'Negativo') return '#94a3b8';
+            const o = parseInt(r.ordem);
+            if (o <= 2)  return '#86efac'; // barato
+            if (o <= 5)  return '#fcd34d'; // médio
+            if (o <= 8)  return '#fb923c'; // caro
+            return '#f87171';              // muito caro
+        });
+
+        this._charts.histograma = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: rows.map(r => r.faixa),
+                datasets: [{
+                    label: 'Nº Bids',
+                    data: rows.map(r => parseInt(r.n_bids)),
+                    backgroundColor: bgColors,
+                }],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { title: { display: true, text: '€/MWh' } },
+                    y: { title: { display: true, text: 'Nº Bids' } },
+                },
+            },
+        });
+    },
+
+    // -------------------------------------------------------------------------
+    // Volume por Categoria — Horizontal bar
+    // -------------------------------------------------------------------------
+
+    async loadCategorias() {
+        try {
+            const data = await apiGet('/api/explorador/categorias' + this._getQs());
+            this._renderCategorias(Array.isArray(data) ? data : []);
+        } catch (e) {
+            console.error('loadCategorias', e);
+        }
+    },
+
+    _renderCategorias(rows) {
+        this._destroyChart('categorias');
+        const ctx = document.getElementById('exp-chart-categorias');
+        if (!ctx) return;
+
+        const top = rows.slice(0, 14);
+        const palette = [
+            '#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#0ea5e9', '#7c3aed',
+            '#db2777', '#059669', '#d97706', '#1d4ed8', '#15803d', '#b91c1c',
+            '#0284c7', '#6d28d9',
+        ];
+
+        this._charts.categorias = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: top.map(r => r.categoria),
+                datasets: [{
+                    label: 'Energia (M MWh)',
+                    data: top.map(r => parseFloat(r.total_energia) / 1e6),
+                    backgroundColor: palette,
+                }],
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { x: { title: { display: true, text: 'M MWh' } } },
+            },
+        });
+    },
+
+    // -------------------------------------------------------------------------
+    // Tendência Mensal — Mixed bar+line
+    // -------------------------------------------------------------------------
+
+    async loadTendenciaMensal() {
+        try {
+            const data = await apiGet('/api/explorador/tendencia-mensal' + this._getQs());
+            this._renderMensal(Array.isArray(data) ? data : []);
+        } catch (e) {
+            console.error('loadTendenciaMensal', e);
+        }
+    },
+
+    _renderMensal(rows) {
+        this._destroyChart('mensal');
+        const ctx = document.getElementById('exp-chart-mensal');
+        if (!ctx) return;
+
+        this._charts.mensal = new Chart(ctx, {
+            data: {
+                labels: rows.map(r => r.mes),
+                datasets: [
+                    {
+                        type: 'bar',
+                        label: 'Energia (M MWh)',
+                        data: rows.map(r => parseFloat(r.total_energia) / 1e6),
+                        backgroundColor: '#93c5fd',
+                        yAxisID: 'yE',
+                    },
+                    {
+                        type: 'line',
+                        label: 'Preço Médio (€/MWh)',
+                        data: rows.map(r => parseFloat(r.preco_medio)),
+                        borderColor: '#dc2626',
+                        backgroundColor: 'transparent',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        borderWidth: 2,
+                        yAxisID: 'yP',
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'top' } },
+                scales: {
+                    yE: {
+                        type: 'linear',
+                        position: 'left',
+                        title: { display: true, text: 'M MWh' },
+                    },
+                    yP: {
+                        type: 'linear',
+                        position: 'right',
+                        title: { display: true, text: '€/MWh' },
+                        grid: { drawOnChartArea: false },
+                    },
+                },
+            },
+        });
+    },
+
+    // -------------------------------------------------------------------------
+    // Top Unidades Geradoras — Table
+    // -------------------------------------------------------------------------
+
+    async loadTopUnidades() {
+        const qs      = this._getQs();
+        const sort    = document.getElementById('exp-top-sort')?.value  || 'energia';
+        const limit   = document.getElementById('exp-top-limit')?.value || '25';
+        const sep     = qs ? '&' : '?';
+        const url     = `/api/explorador/top-unidades${qs}${sep}sort=${sort}&limit=${limit}`;
+        const tbody   = document.getElementById('exp-top-tbody');
+
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="11" class="loading"><span class="spinner"></span> A carregar...</td></tr>`;
+        }
+
+        try {
+            const data = await apiGet(url);
+            if (data && data.error) {
+                if (tbody) tbody.innerHTML = `<tr><td colspan="11" class="text-muted" style="padding:1rem">Erro do servidor: ${escapeHtml(data.error)}</td></tr>`;
+                return;
+            }
+            const rows = Array.isArray(data) ? data : [];
+            this._renderTopUnidades(rows);
+        } catch (e) {
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="11" class="text-muted" style="padding:1rem">Erro: ${escapeHtml(e.message)}</td></tr>`;
+            }
+        }
+    },
+
+    _renderTopUnidades(rows) {
+        const tbody = document.getElementById('exp-top-tbody');
+        if (!tbody) return;
+
+        if (!Array.isArray(rows) || rows.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="11" class="text-center text-muted" style="padding:2rem">Sem dados</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = rows.map((r, i) => `
+            <tr>
+                <td class="text-muted" style="font-size:0.8125rem">${i + 1}</td>
+                <td><code style="font-size:0.8125rem">${escapeHtml(r.unidade || '')}</code></td>
+                <td class="text-muted" style="font-size:0.8125rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                    ${escapeHtml(r.descricao || '—')}
+                </td>
+                <td><span class="badge" style="font-size:0.75rem">${escapeHtml(r.regime || '—')}</span></td>
+                <td class="text-muted" style="font-size:0.8125rem">${escapeHtml(r.categoria || '—')}</td>
+                <td style="font-size:0.8125rem">${escapeHtml(r.zona_frontera || '—')}</td>
+                <td class="text-right">${this._fmtBig(r.n_bids)}</td>
+                <td class="text-right">${this._fmtBig(r.total_energia)}</td>
+                <td class="text-right">${this._fmtNum(r.preco_medio, 2)}</td>
+                <td class="text-right" style="color:var(--color-success)">${this._fmtNum(r.preco_min, 2)}</td>
+                <td class="text-right" style="color:var(--color-error)">${this._fmtNum(r.preco_max, 2)}</td>
+            </tr>
+        `).join('');
+    },
+
+    // -------------------------------------------------------------------------
+    // Console SQL
+    // -------------------------------------------------------------------------
+
+    SQL_PRESETS: {
+        overview: `SELECT
+    pais,
+    tipo_oferta,
+    count()              AS n_bids,
+    round(sum(energia))  AS total_energia_mwh,
+    round(avg(precio),2) AS preco_medio,
+    round(min(precio),2) AS preco_min,
+    round(max(precio),2) AS preco_max
+FROM mibel.bids_raw
+GROUP BY pais, tipo_oferta
+ORDER BY pais, tipo_oferta`,
+
+        horas_caras: `SELECT
+    hora_num,
+    pais,
+    round(avg(precio), 2)    AS preco_medio,
+    count()                  AS n_bids,
+    round(sum(energia))      AS total_mwh
+FROM mibel.bids_raw
+WHERE tipo_oferta = 'V'
+GROUP BY hora_num, pais
+ORDER BY preco_medio DESC
+LIMIT 20`,
+
+        unidade_preco: `SELECT
+    b.unidade,
+    any(u.categoria)         AS categoria,
+    any(u.regime)            AS regime,
+    round(avg(b.precio), 2)  AS preco_medio,
+    round(sum(b.energia))    AS total_mwh,
+    count()                  AS n_bids
+FROM mibel.bids_raw b
+LEFT JOIN mibel.unidades u ON b.unidade = u.codigo
+WHERE b.tipo_oferta = 'V'
+GROUP BY b.unidade
+ORDER BY total_mwh DESC
+LIMIT 20`,
+
+        curva_oferta: `SELECT
+    round(precio / 10) * 10  AS faixa_preco,
+    round(sum(energia))      AS total_mwh,
+    count()                  AS n_bids
+FROM mibel.bids_raw
+WHERE tipo_oferta = 'V'
+GROUP BY faixa_preco
+ORDER BY faixa_preco
+LIMIT 30`,
+
+        bids_hora_dia: `SELECT
+    toDayOfWeek(data_ficheiro)       AS dia_semana,
+    hora_num,
+    round(avg(precio), 2)            AS preco_medio,
+    round(avg(energia), 2)           AS energia_media
+FROM mibel.bids_raw
+WHERE tipo_oferta = 'V'
+GROUP BY dia_semana, hora_num
+ORDER BY dia_semana, hora_num`,
+    },
+
+    setPreset(name) {
+        const sql = this.SQL_PRESETS[name];
+        if (!sql) return;
+        const ta = document.getElementById('exp-sql-input');
+        if (ta) ta.value = sql;
+    },
+
+    async runQuery() {
+        const ta     = document.getElementById('exp-sql-input');
+        const status = document.getElementById('exp-sql-status');
+        const result = document.getElementById('exp-sql-result');
+        const sql    = ta?.value?.trim() || '';
+
+        if (!sql) { toast('Introduza uma query SQL.', 'warning'); return; }
+        if (status) status.textContent = 'A executar…';
+        if (result) result.style.display = 'none';
+
+        try {
+            const t0   = Date.now();
+            const data = await apiPost('/api/explorador/query', { sql });
+            const ms   = Date.now() - t0;
+
+            if (data.error) {
+                if (status) status.textContent = 'Erro: ' + data.error;
+                toast('Erro SQL: ' + data.error, 'error');
+                return;
+            }
+
+            if (status) status.textContent = `${data.count} linha(s) · ${ms} ms`;
+            this._renderSqlResult(data.rows || []);
+            if (result) result.style.display = '';
+        } catch (e) {
+            if (status) status.textContent = 'Erro: ' + e.message;
+            toast('Erro: ' + e.message, 'error');
+        }
+    },
+
+    _renderSqlResult(rows) {
+        const thead = document.getElementById('exp-sql-thead');
+        const tbody = document.getElementById('exp-sql-tbody');
+        if (!thead || !tbody) return;
+
+        if (rows.length === 0) {
+            thead.innerHTML = '';
+            tbody.innerHTML = `<tr><td class="text-muted" style="padding:1rem">Sem resultados.</td></tr>`;
+            return;
+        }
+
+        const cols   = Object.keys(rows[0]);
+        thead.innerHTML = `<tr>${cols.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr>`;
+        tbody.innerHTML = rows.map(r =>
+            `<tr>${cols.map(c => `<td>${escapeHtml(String(r[c] ?? ''))}</td>`).join('')}</tr>`
+        ).join('');
     },
 };
