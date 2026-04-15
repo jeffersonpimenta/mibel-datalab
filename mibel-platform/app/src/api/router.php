@@ -245,9 +245,9 @@ try {
         store();
     }
 
-    if (preg_match('#^/ingestao/([^/]+\.zip)$#', $path, $matches) && $method === 'DELETE') {
+    if (preg_match('#^/ingestao/mes/(\d{6})$#', $path, $matches) && $method === 'DELETE') {
         require_once __DIR__ . '/ingestao.php';
-        destroy($matches[1]);
+        destroyMes($matches[1]);
     }
 
     // -------------------------------------------------------------------------
