@@ -75,7 +75,7 @@ function store(): void
     $logPath = "/data/outputs/{$jobId}.log";
 
     $cmd = sprintf(
-        'docker exec mibel-platform-python-worker-1 python %s --job_id %s --data_inicio %s --data_fim %s --workers %d > %s 2>&1 &',
+        'docker exec mibel-datalab-python-worker-1 python %s --job_id %s --data_inicio %s --data_fim %s --workers %d > %s 2>&1 &',
         $script,
         escapeshellarg($jobId),
         escapeshellarg($dataInicio),
