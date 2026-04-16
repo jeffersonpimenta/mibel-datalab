@@ -45,6 +45,15 @@ async function apiDelete(url) {
     return parseJsonResponse(response);
 }
 
+async function apiPatch(url, data) {
+    const response = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    return parseJsonResponse(response);
+}
+
 // ============================================================================
 // Toast Notifications
 // ============================================================================
@@ -894,11 +903,20 @@ const ParametrosTab = {
 const EstudosTab = {
     estudos: [],
     pollingTimer: null,
+    _logTimer: null,
+    _logJobId: null,
 
     async init() {
         await this.loadData();
         this.render();
         this.startPollingIfNeeded();
+
+        // Stop log polling when the modal is closed
+        const logModal = document.getElementById('modal-log');
+        if (logModal && !logModal._closeListenerAdded) {
+            logModal.addEventListener('close', () => this._stopLogPolling());
+            logModal._closeListenerAdded = true;
+        }
     },
 
     async loadData() {
@@ -942,19 +960,23 @@ const EstudosTab = {
             const periodo = `${job.data_inicio} → ${job.data_fim}`;
             const statusBadge = this.renderStatusBadge(job.status);
             const createdAt = job.created_at ? job.created_at.substring(0, 16) : '-';
-            const obs = escapeHtml(job.observacoes || '-');
-
-            const isDone = job.status === 'DONE';
-            const canCancel = job.status === 'RUNNING';
-            const canDelete = job.status === 'PENDING';
+            const obs = escapeHtml(job.observacoes || '—');
 
             let actions = '';
-            if (isDone) {
+
+            if (job.status === 'DONE') {
                 actions += `<button class="btn btn-success btn-sm" onclick="EstudosTab.verResultados('${job.id}')">Ver resultados</button> `;
             }
-            actions += `<button class="btn btn-secondary btn-sm" onclick="EstudosTab.verLog('${job.id}')">Log</button> `;
-            if (canCancel || canDelete) {
-                actions += `<button class="btn btn-danger btn-sm btn-icon" onclick="EstudosTab.cancelarOuRemover('${job.id}', '${job.status}')" title="Cancelar">×</button>`;
+
+            const logLabel = job.status === 'RUNNING' ? 'Log ao vivo' : 'Log';
+            actions += `<button class="btn btn-secondary btn-sm" onclick="EstudosTab.verLog('${job.id}')">${logLabel}</button> `;
+
+            actions += `<button class="btn btn-secondary btn-sm" onclick="EstudosTab.editarObservacoes('${job.id}')" title="Editar observações">Editar</button> `;
+
+            if (job.status === 'RUNNING') {
+                actions += `<button class="btn btn-warning btn-sm" onclick="EstudosTab.cancelarEstudo('${job.id}')">Cancelar</button>`;
+            } else {
+                actions += `<button class="btn btn-danger btn-sm btn-icon" onclick="EstudosTab.apagarEstudo('${job.id}')" title="Apagar estudo">×</button>`;
             }
 
             html += `
@@ -1051,58 +1073,157 @@ const EstudosTab = {
 
     async verLog(jobId) {
         const modal = document.getElementById('modal-log');
-        const modalJobId = document.getElementById('modal-job-id');
-        const modalContent = document.getElementById('modal-log-content');
+        if (!modal) return;
 
-        if (!modal || !modalContent) return;
+        const job = this.estudos.find(j => j.id === jobId);
+        const isLive = job?.status === 'RUNNING';
 
-        if (modalJobId) modalJobId.textContent = jobId.substring(0, 8) + '…';
-        modalContent.textContent = 'A carregar log…';
+        document.getElementById('modal-job-id').textContent = jobId.substring(0, 8) + '…';
+        document.getElementById('modal-log-content').textContent = 'A carregar log…';
+
+        const liveEl   = document.getElementById('modal-log-live');
+        const statusEl = document.getElementById('modal-log-status');
+        if (liveEl)   { liveEl.style.display   = isLive ? '' : 'none'; }
+        if (statusEl) { statusEl.style.display  = 'none'; }
+
         modal.showModal();
+
+        if (isLive) {
+            this._startLogPolling(jobId);
+        } else {
+            await this._loadLogOnce(jobId);
+        }
+    },
+
+    fecharModalLog() {
+        this._stopLogPolling();
+        document.getElementById('modal-log')?.close();
+    },
+
+    _startLogPolling(jobId) {
+        this._stopLogPolling();
+        this._logJobId = jobId;
+        this._loadLogOnce(jobId);
+        this._logTimer = setInterval(() => this._loadLogOnce(jobId), 2500);
+    },
+
+    _stopLogPolling() {
+        if (this._logTimer) { clearInterval(this._logTimer); this._logTimer = null; }
+        this._logJobId = null;
+        const liveEl = document.getElementById('modal-log-live');
+        if (liveEl) liveEl.style.display = 'none';
+    },
+
+    async _loadLogOnce(jobId) {
+        const contentEl   = document.getElementById('modal-log-content');
+        const statusEl    = document.getElementById('modal-log-status');
+        const liveEl      = document.getElementById('modal-log-live');
+        const autoScrollEl = document.getElementById('modal-log-autoscroll');
+        if (!contentEl) return;
 
         try {
             const data = await apiGet(`/api/estudos/${jobId}`);
-            if (data.error) {
-                modalContent.textContent = 'Erro: ' + data.error;
-                return;
+            if (data.error) { contentEl.textContent = 'Erro: ' + data.error; return; }
+
+            const lines   = data.log || [];
+            const newText = lines.length > 0 ? lines.join('\n') : '(sem linhas de log)';
+
+            if (contentEl.textContent !== newText) {
+                const wasBottom = contentEl.scrollHeight - contentEl.scrollTop <= contentEl.clientHeight + 40;
+                contentEl.textContent = newText;
+                if (autoScrollEl?.checked || wasBottom) {
+                    contentEl.scrollTop = contentEl.scrollHeight;
+                }
             }
-            const lines = data.log || [];
-            modalContent.textContent = lines.length > 0 ? lines.join('\n') : '(sem linhas de log)';
-            modalContent.scrollTop = modalContent.scrollHeight;
-        } catch (e) {
-            modalContent.textContent = 'Erro ao carregar log: ' + e.message;
-        }
+
+            const job = data.job || {};
+            if (statusEl) {
+                statusEl.textContent  = job.status || '';
+                statusEl.className    = `badge status-${(job.status || '').toLowerCase()}`;
+                statusEl.style.display = '';
+            }
+
+            // If job finished, stop polling and refresh table
+            if (job.status && job.status !== 'RUNNING' && this._logJobId === jobId) {
+                this._stopLogPolling();
+                if (liveEl) liveEl.style.display = 'none';
+                await this.loadData();
+                this.render();
+            }
+        } catch (_) { /* network hiccup — retry on next tick */ }
     },
 
     verResultados(jobId) {
         switchTab('resultados', jobId);
     },
 
-    async cancelarOuRemover(jobId, status) {
-        const action = status === 'RUNNING' ? 'cancelar' : 'remover';
-        if (!confirm(`Confirma ${action} este estudo?`)) return;
-
+    async cancelarEstudo(jobId) {
+        if (!confirm('Confirma o cancelamento deste estudo?')) return;
         try {
-            let result;
-            if (status === 'RUNNING') {
-                result = await apiPost(`/api/estudos/${jobId}/cancelar`, {});
-            } else {
-                result = await apiDelete(`/api/estudos/${jobId}`);
-            }
-
-            if (result?.error) {
-                toast('Erro: ' + result.error, 'error');
-                return;
-            }
-
-            toast(`Estudo ${action}do com sucesso`, 'success');
+            const result = await apiPost(`/api/estudos/${jobId}/cancelar`, {});
+            if (result?.error) { toast('Erro: ' + result.error, 'error'); return; }
+            toast('Estudo cancelado', 'success');
             await this.loadData();
             this.render();
             this.startPollingIfNeeded();
         } catch (e) {
             toast('Erro: ' + e.message, 'error');
         }
-    }
+    },
+
+    async apagarEstudo(jobId) {
+        const job = this.estudos.find(j => j.id === jobId);
+        const isDone = job?.status === 'DONE';
+        const msg = isDone
+            ? 'Apagar este estudo e os seus resultados? Esta acção não pode ser desfeita.'
+            : 'Confirma a remoção deste estudo?';
+        if (!confirm(msg)) return;
+        try {
+            const result = await apiDelete(`/api/estudos/${jobId}`);
+            if (result?.error) { toast('Erro: ' + result.error, 'error'); return; }
+            toast('Estudo removido', 'success');
+            await this.loadData();
+            this.render();
+            this.startPollingIfNeeded();
+        } catch (e) {
+            toast('Erro: ' + e.message, 'error');
+        }
+    },
+
+    editarObservacoes(jobId) {
+        const modal    = document.getElementById('modal-edit-obs');
+        const jobIdEl  = document.getElementById('modal-edit-job-id');
+        const obsInput = document.getElementById('modal-edit-obs-input');
+        if (!modal) return;
+
+        const job = this.estudos.find(j => j.id === jobId);
+        if (jobIdEl)  jobIdEl.textContent = jobId.substring(0, 8) + '…';
+        if (obsInput) obsInput.value = job?.observacoes || '';
+
+        modal.dataset.jobId = jobId;
+        modal.showModal();
+        obsInput?.focus();
+    },
+
+    async guardarObservacoes() {
+        const modal    = document.getElementById('modal-edit-obs');
+        const obsInput = document.getElementById('modal-edit-obs-input');
+        const jobId    = modal?.dataset?.jobId;
+        if (!jobId) return;
+
+        try {
+            const result = await apiPatch(`/api/estudos/${jobId}/observacoes`, {
+                observacoes: obsInput?.value?.trim() || ''
+            });
+            if (result?.error) { toast('Erro: ' + result.error, 'error'); return; }
+            modal.close();
+            toast('Observações actualizadas', 'success');
+            await this.loadData();
+            this.render();
+        } catch (e) {
+            toast('Erro: ' + e.message, 'error');
+        }
+    },
 };
 
 // ============================================================================
