@@ -226,3 +226,7 @@ Definidas no `docker-compose.yml`:
 |---|---|---|---|
 | `CLICKHOUSE_HOST` | python-worker | `clickhouse` | Host do ClickHouse |
 | `CLICKHOUSE_PORT` | python-worker | `9000` | Porta nativa do ClickHouse |
+
+## Licenca
+
+Projeto academico desenvolvido no ambito de uma dissertacao de mestrado na FEUP. Todos os direitos reservados.

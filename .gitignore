@@ -1,17 +1,17 @@
 # ─── Runtime data ────────────────────────────────────────────────────────────
 # Large binary bid data (ZIPs downloaded from MIBEL/OMIE)
-mibel-platform/data/bids/
+data/bids/
 
 # SQLite job-queue database (created at runtime by migrate.php)
-mibel-platform/data/jobs.db
+data/jobs.db
 
 # Worker output logs (UUID-named, created per job)
-mibel-platform/data/outputs/
+data/outputs/
 
 # ClickHouse storage volume (populated by Docker)
-mibel-platform/data/clickhouse/
+data/clickhouse/
 
-# NOTE: mibel-platform/data/config/ is intentionally tracked (project config)
+# NOTE: data/config/ is intentionally tracked (project config)
 
 # ─── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
