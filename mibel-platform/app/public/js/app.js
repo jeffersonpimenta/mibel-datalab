@@ -1124,9 +1124,6 @@ const ResultadosTab = {
         this.pais = '';
         this.tabelaOffset = 0;
 
-        const paisSel = document.getElementById('res-pais-filter');
-        if (paisSel) paisSel.value = '';
-
         const csvLink  = document.getElementById('res-export-csv');
         const jsonLink = document.getElementById('res-export-json');
         if (csvLink)  csvLink.href  = `/api/resultados/${jobId}/exportar?formato=csv`;
@@ -1295,8 +1292,7 @@ const ResultadosTab = {
     async loadCharts() {
         if (!this.jobId) return;
         try {
-            const paisParam = this.pais ? `?pais=${this.pais}` : '';
-            const data = await apiGet(`/api/resultados/${this.jobId}/serie${paisParam}`);
+            const data = await apiGet(`/api/resultados/${this.jobId}/serie`);
             if (data.error) return;
             this.renderChartSerie(data);
             this.renderChartDelta(data);
@@ -1306,33 +1302,108 @@ const ResultadosTab = {
     },
 
     renderChartSerie(data) {
-        let labels = data.labels     || [];
-        let orig   = data.preco_orig || [];
-        let sub    = data.preco_sim  || [];
+        const rows = data.rows || [];
+        if (!rows.length) return;
+
+        // Build ordered list of unique time-points and group rows by (data, hora_num)
+        const ptMap   = new Map();  // label -> { MI: row, ES: row, PT: row }
+        const ptOrder = [];
+        for (const r of rows) {
+            const key = `${r.data} H${r.hora_num}`;
+            if (!ptMap.has(key)) { ptMap.set(key, {}); ptOrder.push(key); }
+            ptMap.get(key)[r.pais] = r;
+        }
+
+        const n     = ptOrder.length;
+        const origMI = Array(n).fill(null);
+        const simMI  = Array(n).fill(null);
+        const origES = Array(n).fill(null);
+        const simES  = Array(n).fill(null);
+        const origPT = Array(n).fill(null);
+        const simPT  = Array(n).fill(null);
+        const isSep  = Array(n).fill(false);
+
+        ptOrder.forEach((key, i) => {
+            const pt = ptMap.get(key);
+            if (pt.MI) {
+                origMI[i] = parseFloat(pt.MI.preco_orig);
+                simMI[i]  = parseFloat(pt.MI.preco_sim);
+            }
+            if (pt.ES) {
+                origES[i] = parseFloat(pt.ES.preco_orig);
+                simES[i]  = parseFloat(pt.ES.preco_sim);
+                isSep[i]  = true;
+            }
+            if (pt.PT) {
+                origPT[i] = parseFloat(pt.PT.preco_orig);
+                simPT[i]  = parseFloat(pt.PT.preco_sim);
+                isSep[i]  = true;
+            }
+        });
+
+        // Transition connectors: at separation boundaries bridge MI ↔ ES/PT
+        // so the curves visually diverge/converge at those points.
+        for (let i = 0; i < n; i++) {
+            // Entry: last unified point → first separated point
+            if (i > 0 && isSep[i] && !isSep[i - 1] && origMI[i - 1] !== null) {
+                origES[i - 1] = origMI[i - 1];
+                simES[i - 1]  = simMI[i - 1];
+                origPT[i - 1] = origMI[i - 1];
+                simPT[i - 1]  = simMI[i - 1];
+            }
+            // Exit: last separated point → first unified point
+            if (i > 0 && !isSep[i] && isSep[i - 1] && origMI[i] !== null) {
+                origES[i] = origMI[i];
+                simES[i]  = simMI[i];
+                origPT[i] = origMI[i];
+                simPT[i]  = simMI[i];
+            }
+        }
 
         // Subsample to ≤ 500 points for performance
-        if (labels.length > 500) {
-            const step = Math.ceil(labels.length / 500);
-            labels = labels.filter((_, i) => i % step === 0);
-            orig   = orig.filter((_, i)   => i % step === 0);
-            sub    = sub.filter((_, i)    => i % step === 0);
+        let lbls = ptOrder.slice();
+        let [oMI, sMI, oES, sES, oPT, sPT] = [origMI, simMI, origES, simES, origPT, simPT];
+        if (lbls.length > 500) {
+            const step = Math.ceil(lbls.length / 500);
+            const keep = (_, i) => i % step === 0;
+            lbls = lbls.filter(keep);
+            oMI  = origMI.filter(keep);
+            sMI  = simMI.filter(keep);
+            oES  = origES.filter(keep);
+            sES  = simES.filter(keep);
+            oPT  = origPT.filter(keep);
+            sPT  = simPT.filter(keep);
         }
 
         if (this.chartSerie) { this.chartSerie.destroy(); this.chartSerie = null; }
-
         const ctx = document.getElementById('chart-serie');
         if (!ctx) return;
 
-        const simLabel = this.tipo === 'otimizacao' ? 'Óptimo' : 'Simulado';
+        const hasES  = oES.some(v => v !== null);
+        const hasPT  = oPT.some(v => v !== null);
+        const simLbl = this.tipo === 'otimizacao' ? 'Óptimo' : 'Simulado';
+
+        const BASE = { tension: 0.1, pointRadius: 0, backgroundColor: 'transparent', spanGaps: false };
+        const datasets = [
+            { ...BASE, label: 'MIBEL Original',    data: oMI, borderColor: '#1f6fb5', borderWidth: 1.8 },
+            { ...BASE, label: `MIBEL ${simLbl}`,   data: sMI, borderColor: '#7eb8e8', borderWidth: 1.4, borderDash: [5, 3] },
+        ];
+        if (hasES) {
+            datasets.push(
+                { ...BASE, label: 'ES Original',   data: oES, borderColor: '#d04e1a', borderWidth: 1.8 },
+                { ...BASE, label: `ES ${simLbl}`,  data: sES, borderColor: '#f0a07e', borderWidth: 1.4, borderDash: [5, 3] }
+            );
+        }
+        if (hasPT) {
+            datasets.push(
+                { ...BASE, label: 'PT Original',   data: oPT, borderColor: '#2a9d45', borderWidth: 1.8 },
+                { ...BASE, label: `PT ${simLbl}`,  data: sPT, borderColor: '#80cb96', borderWidth: 1.4, borderDash: [5, 3] }
+            );
+        }
+
         this.chartSerie = new Chart(ctx, {
             type: 'line',
-            data: {
-                labels,
-                datasets: [
-                    { label: 'Original', data: orig, borderColor: '#2563eb', backgroundColor: 'transparent', tension: 0.1, pointRadius: 0, borderWidth: 1.5 },
-                    { label: simLabel,   data: sub,  borderColor: '#ea580c', backgroundColor: 'transparent', tension: 0.1, pointRadius: 0, borderWidth: 1.5 },
-                ]
-            },
+            data: { labels: lbls, datasets },
             options: {
                 responsive: true,
                 plugins: { legend: { position: 'top' } },
@@ -1396,8 +1467,7 @@ const ResultadosTab = {
         }
 
         try {
-            const paisParam = this.pais ? `&pais=${this.pais}` : '';
-            const data = await apiGet(`/api/resultados/${this.jobId}/tabela?limit=${this.PAGE_SIZE}&offset=${offset}${paisParam}`);
+            const data = await apiGet(`/api/resultados/${this.jobId}/tabela?limit=${this.PAGE_SIZE}&offset=${offset}`);
             if (data.error) { toast('Erro na tabela: ' + data.error, 'error'); return; }
 
             this.tabelaTotal = parseInt(data.total || 0);
