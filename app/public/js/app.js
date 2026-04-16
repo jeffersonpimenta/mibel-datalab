@@ -953,25 +953,32 @@ const EstudosTab = {
 
         let html = '';
         this.estudos.forEach(job => {
-            const tipoBadge = job.tipo === 'otimizacao'
-                ? '<span class="badge badge-primary">Optimização</span>'
-                : '<span class="badge">Substituição</span>';
+            const isIngestao = job.tipo === 'ingestao';
+            const tipoBadge = isIngestao
+                ? '<span class="badge" style="background:#6c757d;color:#fff">Ingestão</span>'
+                : job.tipo === 'otimizacao'
+                    ? '<span class="badge badge-primary">Optimização</span>'
+                    : '<span class="badge">Substituição</span>';
 
-            const periodo = `${job.data_inicio} → ${job.data_fim}`;
+            const periodo = isIngestao
+                ? `<span class="text-muted" style="font-size:.85em">${escapeHtml(job.observacoes || '—')}</span>`
+                : `<code>${escapeHtml(job.data_inicio + ' → ' + job.data_fim)}</code>`;
             const statusBadge = this.renderStatusBadge(job.status);
             const createdAt = job.created_at ? job.created_at.substring(0, 16) : '-';
-            const obs = escapeHtml(job.observacoes || '—');
+            const obs = isIngestao ? '—' : escapeHtml(job.observacoes || '—');
 
             let actions = '';
 
-            if (job.status === 'DONE') {
+            if (!isIngestao && job.status === 'DONE') {
                 actions += `<button class="btn btn-success btn-sm" onclick="EstudosTab.verResultados('${job.id}')">Ver resultados</button> `;
             }
 
             const logLabel = job.status === 'RUNNING' ? 'Log ao vivo' : 'Log';
             actions += `<button class="btn btn-secondary btn-sm" onclick="EstudosTab.verLog('${job.id}')">${logLabel}</button> `;
 
-            actions += `<button class="btn btn-secondary btn-sm" onclick="EstudosTab.editarObservacoes('${job.id}')" title="Editar observações">Editar</button> `;
+            if (!isIngestao) {
+                actions += `<button class="btn btn-secondary btn-sm" onclick="EstudosTab.editarObservacoes('${job.id}')" title="Editar observações">Editar</button> `;
+            }
 
             if (job.status === 'RUNNING') {
                 actions += `<button class="btn btn-warning btn-sm" onclick="EstudosTab.cancelarEstudo('${job.id}')">Cancelar</button>`;
@@ -982,7 +989,7 @@ const EstudosTab = {
             html += `
                 <tr data-job-id="${job.id}">
                     <td>${tipoBadge}</td>
-                    <td><code>${escapeHtml(periodo)}</code></td>
+                    <td>${periodo}</td>
                     <td class="text-muted">${obs}</td>
                     <td>${statusBadge}</td>
                     <td>${escapeHtml(createdAt)}</td>
