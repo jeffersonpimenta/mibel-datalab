@@ -297,12 +297,6 @@
                         <div id="res-badges" class="flex gap-2 flex-wrap"></div>
                     </div>
                     <div class="flex gap-2 flex-wrap items-center">
-                        <select id="res-pais-filter" class="form-select" onchange="ResultadosTab.setPais(this.value)">
-                            <option value="">Todos os países</option>
-                            <option value="MI">MI (MIBEL)</option>
-                            <option value="ES">ES (Espanha)</option>
-                            <option value="PT">PT (Portugal)</option>
-                        </select>
                         <a id="res-export-csv"  class="btn btn-secondary" download>Exportar CSV</a>
                         <a id="res-export-json" class="btn btn-secondary" download>Exportar JSON</a>
                     </div>
