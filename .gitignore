@@ -1,2 +1,50 @@
+# ─── Runtime data ────────────────────────────────────────────────────────────
+# Large binary bid data (ZIPs downloaded from MIBEL/OMIE)
+mibel-platform/data/bids/
+
+# SQLite job-queue database (created at runtime by migrate.php)
+mibel-platform/data/jobs.db
+
+# Worker output logs (UUID-named, created per job)
+mibel-platform/data/outputs/
+
+# ClickHouse storage volume (populated by Docker)
+mibel-platform/data/clickhouse/
+
+# NOTE: mibel-platform/data/config/ is intentionally tracked (project config)
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# ─── Backup / temp files ─────────────────────────────────────────────────────
+*.old
+*.bak
+*.tmp
+*.orig
+*.swp
+*~
+
+# ─── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ─── IDEs ────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.suo
+*.user
+*.code-workspace
+
+# ─── Claude Code ─────────────────────────────────────────────────────────────
 .claude
-./mibel-platform/data/*
