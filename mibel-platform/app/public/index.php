@@ -646,16 +646,45 @@
 
     <!-- Log Modal -->
     <dialog id="modal-log">
-        <div class="modal-content">
+        <div class="modal-content" style="width:720px;max-width:95vw">
             <div class="modal-header">
                 <h3>Log do Estudo</h3>
-                <span id="modal-job-id" class="badge badge-primary"></span>
+                <div class="flex gap-2 items-center">
+                    <span id="modal-log-status" class="badge" style="display:none"></span>
+                    <span id="modal-log-live" class="badge status-running" style="display:none">ao vivo</span>
+                    <span id="modal-job-id" class="badge badge-primary"></span>
+                </div>
             </div>
-            <div class="modal-body">
-                <pre id="modal-log-content"></pre>
+            <div class="modal-body" style="padding:0">
+                <pre id="modal-log-content" style="margin:0;max-height:60vh;overflow-y:auto;padding:1rem;font-size:0.78rem;line-height:1.5"></pre>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="document.getElementById('modal-log').close()">Fechar</button>
+                <label class="flex items-center gap-2 text-sm text-muted" style="margin-right:auto">
+                    <input type="checkbox" id="modal-log-autoscroll" checked>
+                    Auto-scroll
+                </label>
+                <button class="btn btn-secondary" onclick="EstudosTab.fecharModalLog()">Fechar</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Edit Observations Modal -->
+    <dialog id="modal-edit-obs">
+        <div class="modal-content" style="width:480px;max-width:95vw">
+            <div class="modal-header">
+                <h3>Editar Observações</h3>
+                <span id="modal-edit-job-id" class="badge badge-primary"></span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Observações</label>
+                    <textarea id="modal-edit-obs-input" class="form-input" rows="4"
+                        placeholder="Notas para identificar este estudo..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="document.getElementById('modal-edit-obs').close()">Cancelar</button>
+                <button class="btn btn-primary" onclick="EstudosTab.guardarObservacoes()">Guardar</button>
             </div>
         </div>
     </dialog>
