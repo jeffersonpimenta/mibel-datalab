@@ -164,7 +164,7 @@ function store(): void
 
     // Lançar ingestao_worker.py no container Python
     $cmd = sprintf(
-        'docker exec mibel-platform-python-worker-1 python /app/ingestao_worker.py --job_id %s --zip_path %s --workers 4 > %s 2>&1 &',
+        'docker exec mibel-datalab-python-worker-1 python /app/ingestao_worker.py --job_id %s --zip_path %s --workers 4 > %s 2>&1 &',
         escapeshellarg($jobId),
         escapeshellarg($dest),
         $logPath
