@@ -141,6 +141,8 @@ function serie(string $jobId): void
 
     json_response([
         'tipo'        => isOtimizacao($job) ? 'otimizacao' : 'substituicao',
+        'rows'        => $rows,
+        'pais'        => array_column($rows, 'pais'),
         'labels'      => array_map(fn($r) => "{$r['data']} H{$r['hora_num']}", $rows),
         'preco_orig'  => array_column($rows, 'preco_orig'),
         'preco_sim'   => array_column($rows, 'preco_sim'),
