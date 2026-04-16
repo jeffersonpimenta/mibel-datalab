@@ -45,6 +45,7 @@ services:
       - mibel-net
 
   python-worker:
+    container_name: mibel-datalab-python-worker-1
     build:
       context: ./docker/python
     volumes:
