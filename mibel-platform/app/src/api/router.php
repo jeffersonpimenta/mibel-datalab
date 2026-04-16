@@ -202,6 +202,11 @@ try {
         destroy($matches[1]);
     }
 
+    if (preg_match('#^/estudos/([a-f0-9-]{36})/observacoes$#', $path, $matches) && $method === 'PATCH') {
+        require_once __DIR__ . '/estudos.php';
+        patchObservacoes($matches[1]);
+    }
+
     // -------------------------------------------------------------------------
     // Resultados Routes
     // -------------------------------------------------------------------------
