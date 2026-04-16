@@ -69,7 +69,7 @@ Exportacao dos resultados de estudos em formato Excel.
 ## Estrutura do Projeto
 
 ```
-mibel-platform/
+mibel-datalab/
 ├── app/
 │   ├── public/                  # Web root
 │   │   ├── index.php            # Interface principal (SPA)
@@ -124,7 +124,7 @@ mibel-platform/
 ```bash
 # Clonar o repositorio
 git clone <url-do-repositorio>
-cd mibel-platform
+cd mibel-datalab
 
 # Iniciar todos os servicos
 docker compose up -d
