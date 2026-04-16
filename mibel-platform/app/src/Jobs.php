@@ -175,17 +175,26 @@ class Jobs
     }
 
     /**
-     * Delete a job by ID (only if PENDING or FAILED)
+     * Delete a job by ID (PENDING, FAILED or DONE — not RUNNING)
      */
     public function delete(string $id): bool
     {
         $stmt = $this->pdo->prepare("
             DELETE FROM jobs
-            WHERE id = :id AND status IN ('PENDING', 'FAILED')
+            WHERE id = :id AND status IN ('PENDING', 'FAILED', 'DONE')
         ");
         $stmt->execute([':id' => $id]);
 
         return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Update the observations text of a job
+     */
+    public function updateObservacoes(string $id, string $observacoes): void
+    {
+        $stmt = $this->pdo->prepare("UPDATE jobs SET observacoes = :obs WHERE id = :id");
+        $stmt->execute([':obs' => $observacoes, ':id' => $id]);
     }
 
     /**
