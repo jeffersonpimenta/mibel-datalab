@@ -191,7 +191,8 @@ function cancelar(string $id): void
 
 /**
  * DELETE /api/estudos/{id}
- * Delete a job (only PENDING or FAILED)
+ * Delete a job (PENDING, FAILED or DONE — not RUNNING)
+ * For DONE jobs also schedules ClickHouse data deletion (async mutation).
  */
 function destroy(string $id): void
 {
@@ -202,14 +203,30 @@ function destroy(string $id): void
         error_response('Estudo não encontrado', 404);
     }
 
-    if (!in_array($job['status'], ['PENDING', 'FAILED'])) {
-        error_response('Apenas estudos PENDING ou FAILED podem ser removidos', 400);
+    if ($job['status'] === 'RUNNING') {
+        error_response('Não é possível apagar um estudo em execução. Cancele-o primeiro.', 400);
+    }
+
+    if (!in_array($job['status'], ['PENDING', 'FAILED', 'DONE'])) {
+        error_response('Estado inválido para remoção', 400);
+    }
+
+    // For DONE jobs: schedule async ClickHouse mutation to remove result data
+    if ($job['status'] === 'DONE') {
+        $table = $job['tipo'] === 'otimizacao'
+            ? 'mibel.clearing_otimizacao'
+            : 'mibel.clearing_substituicao';
+        try {
+            $db = Database::getInstance();
+            $db->execute("ALTER TABLE {$table} DELETE WHERE job_id = '{$id}'");
+        } catch (\Exception $e) {
+            // Non-fatal: ClickHouse mutation failure does not block SQLite deletion
+        }
     }
 
     $deleted = $jobs->delete($id);
 
     if ($deleted) {
-        // Also remove log file if exists
         $logPath = "/data/outputs/{$id}.log";
         if (file_exists($logPath)) {
             @unlink($logPath);
@@ -222,6 +239,26 @@ function destroy(string $id): void
     } else {
         error_response('Não foi possível remover o estudo', 500);
     }
+}
+
+/**
+ * PATCH /api/estudos/{id}/observacoes
+ * Update the observations text of a job
+ * Body: {observacoes: string}
+ */
+function patchObservacoes(string $id): void
+{
+    $body = request_body();
+    $observacoes = trim($body['observacoes'] ?? '');
+
+    $jobs = new Jobs();
+    if (!$jobs->get($id)) {
+        error_response('Estudo não encontrado', 404);
+    }
+
+    $jobs->updateObservacoes($id, $observacoes);
+
+    json_response(['success' => true, 'observacoes' => $observacoes]);
 }
 
 /**
